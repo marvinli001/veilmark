@@ -1,11 +1,14 @@
 "use client"
 
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@appica/ui-react/collapsible"
 import { ColorPicker } from "@appica/ui-react/color-picker"
 import { formatColor } from "@appica/ui-react/color"
 import { Slider } from "@appica/ui-react/slider"
 import { Switch } from "@appica/ui-react/switch"
 import { Toggle } from "@appica/ui-react/toggle"
 import { ToggleGroup } from "@appica/ui-react/toggle-group"
+import { ChevronDown } from "lucide-react"
+import { useState } from "react"
 
 import { useStudio } from "@/lib/store"
 import { cn } from "@/lib/utils"
@@ -20,23 +23,55 @@ export function Section({
   children,
   className,
 }: {
-  title: string
+  title?: string
   description?: React.ReactNode
   action?: React.ReactNode
-  children: React.ReactNode
+  children?: React.ReactNode
   className?: string
 }) {
   return (
-    <section className={cn("flex flex-col gap-3 border-b border-border-muted px-4 py-4 last:border-b-0", className)}>
-      <header className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h3 className="text-sm font-medium text-foreground-intense">{title}</h3>
-          {description && <p className="mt-0.5 text-xs leading-relaxed text-foreground-muted">{description}</p>}
-        </div>
-        {action}
-      </header>
+    <section className={cn("flex flex-col gap-3 px-4 py-4", className)}>
+      {(title || action) && (
+        <header className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            {title && <h3 className="text-sm font-medium text-foreground-intense">{title}</h3>}
+            {description && <p className="mt-0.5 text-xs leading-relaxed text-foreground-muted">{description}</p>}
+          </div>
+          {action}
+        </header>
+      )}
       {children}
     </section>
+  )
+}
+
+/** 折叠区的展开状态在本次会话内记住（切换标签页时面板会卸载） */
+const openMore = new Set<string>()
+
+/**
+ * 渐进披露：常用参数平铺，其余收进“更多”折叠区，默认收起。
+ * 面板默认只露出决定效果的几个参数，想精调时再展开。
+ */
+export function More({ id, label, children }: { id: string; label: string; children: React.ReactNode }) {
+  const [open, setOpen] = useState(() => openMore.has(id))
+  return (
+    <Collapsible
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o)
+        if (o) openMore.add(id)
+        else openMore.delete(id)
+      }}
+      className="border-t border-border-muted"
+    >
+      <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-4 py-3 text-sm text-foreground-muted outline-ring-primary hover:text-foreground-intense">
+        {label}
+        <ChevronDown className="size-4 transition-transform duration-200 group-data-[panel-open]:rotate-180" />
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <div className="pb-2">{children}</div>
+      </CollapsibleContent>
+    </Collapsible>
   )
 }
 

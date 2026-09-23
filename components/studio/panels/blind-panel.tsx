@@ -16,7 +16,13 @@ import { formatKeyId } from "@/lib/watermark/identity"
 import type { BlindConfig } from "@/lib/watermark/pipeline"
 import { previewWorker } from "@/lib/workers/client"
 
-import { Callout, FieldRow, Section, Segmented, SliderRow, SwitchRow } from "../controls"
+import { Callout, FieldRow, More, Section, Segmented, SliderRow, SwitchRow } from "../controls"
+
+const ENGINE_COPY: Record<BlindConfig["engine"], string> = {
+  cdp: "零下载、即时；抗压缩、缩放、截图与调色，不抗裁剪。",
+  trustmark: "深度模型，额外抗裁剪；首次需加载模型。",
+  dual: "两者叠加、互为备份，检出率最高。",
+}
 
 const ROBUSTNESS = [
   ["JPEG q50 / WebP", "✓", "✓"],
@@ -42,144 +48,145 @@ export function BlindPanel() {
   const creatorHex = (derived ? identityCreatorId : creatorIdFromText(b.creator || job.author || "anonymous"))
     .toString(16)
     .padStart(6, "0")
+  const today = dateFromDay(dayFromDate(new Date())).toISOString().slice(0, 10)
 
   return (
     <div>
       <Section
-        title="算法盲水印"
-        description="肉眼不可见的版权指纹，可在“验证”页提取"
-        action={<Switch checked={b.enabled} onCheckedChange={(enabled) => set({ enabled })} />}
-      >
-        <Segmented
-          value={b.engine}
-          onChange={(engine) => set({ engine })}
-          options={[
-            { value: "cdp", label: "频域 CDP", title: "零下载、即时" },
-            { value: "trustmark", label: "TrustMark", title: "深度模型，抗裁剪" },
-            { value: "dual", label: "双引擎", title: "两者叠加，互为备份" },
-          ]}
-        />
-        {needsModel && !trustmarkReady && (
-          <div className="flex items-center justify-between gap-3 rounded-lg bg-background-muted px-3 py-2">
-            <p className="text-xs text-foreground-muted">
-              需要加载 TrustMark 模型（≈64 MB，首次后浏览器缓存）。未加载前仅嵌入 CDP。
-              {loadError && <span className="block text-error-emphasis">加载失败：{loadError}</span>}
-            </p>
-            <Button
-              size="sm"
-              variant="soft"
-              disabled={loading}
-              onClick={async () => {
-                setLoading(true)
-                setLoadError(null)
-                try {
-                  await previewWorker().loadTrustMark(new URL(TRUSTMARK_BASE, location.href).href)
-                  setTrustmarkReady(true)
-                } catch (e) {
-                  setLoadError(e instanceof Error ? e.message : String(e))
-                } finally {
-                  setLoading(false)
-                }
-              }}
-            >
-              {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
-              加载
-            </Button>
-          </div>
-        )}
-        <table className="w-full text-xs">
-          <thead className="text-foreground-muted">
-            <tr>
-              <th className="py-1 text-left font-normal">实测鲁棒性</th>
-              <th className="w-16 py-1 font-normal">CDP</th>
-              <th className="w-20 py-1 font-normal">TrustMark</th>
-            </tr>
-          </thead>
-          <tbody className="text-foreground-strong">
-            {ROBUSTNESS.map(([k, a, c]) => (
-              <tr key={k} className="border-t border-border-muted">
-                <td className="py-1">{k}</td>
-                <td className="py-1 text-center">{a}</td>
-                <td className="py-1 text-center">{c}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </Section>
+        title="盲水印"
+        description="肉眼不可见的版权指纹，可在“验证”页提取，并用于签发证书。"
+        action={<Switch checked={b.enabled} onCheckedChange={(enabled) => set({ enabled })} aria-label="开启盲水印" />}
+      />
+      {b.enabled && (
+        <>
+          <Section title="引擎">
+            <Segmented
+              value={b.engine}
+              onChange={(engine) => set({ engine })}
+              options={[
+                { value: "cdp", label: "频域 CDP", title: "零下载、即时" },
+                { value: "trustmark", label: "TrustMark", title: "深度模型，抗裁剪" },
+                { value: "dual", label: "双引擎", title: "两者叠加，互为备份" },
+              ]}
+            />
+            <p className="text-xs leading-relaxed text-foreground-muted">{ENGINE_COPY[b.engine]}</p>
+            {needsModel && !trustmarkReady && (
+              <div className="flex items-center justify-between gap-3 rounded-lg bg-background-muted px-3 py-2">
+                <p className="text-xs text-foreground-muted">
+                  需加载 TrustMark 模型（≈64 MB，之后浏览器缓存），加载前只嵌入 CDP。
+                  {loadError && <span className="block text-error-emphasis">加载失败：{loadError}</span>}
+                </p>
+                <Button
+                  size="sm"
+                  variant="soft"
+                  disabled={loading}
+                  onClick={async () => {
+                    setLoading(true)
+                    setLoadError(null)
+                    try {
+                      await previewWorker().loadTrustMark(new URL(TRUSTMARK_BASE, location.href).href)
+                      setTrustmarkReady(true)
+                    } catch (e) {
+                      setLoadError(e instanceof Error ? e.message : String(e))
+                    } finally {
+                      setLoading(false)
+                    }
+                  }}
+                >
+                  {loading ? <Loader2 className="size-3.5 animate-spin" /> : <Download className="size-3.5" />}
+                  加载
+                </Button>
+              </div>
+            )}
+          </Section>
 
-      <Section title="载荷" description="56 bit 紧凑指纹 + CRC-16；完整信息写入本地注册表">
-        <FieldRow label="创作者">
-          <Input
-            placeholder="名字或数字工号"
-            value={derived ? "" : b.creator}
-            disabled={derived}
-            onChange={(e) => set({ creator: e.target.value })}
-            endSlot={<span className="font-mono text-[11px] text-foreground-subtle">#{creatorHex}</span>}
-          />
-        </FieldRow>
-        <SwitchRow
-          label="用签名身份派生创作者 ID"
-          hint={
-            identity
-              ? `取 SHA-256(公钥) 前 24 bit，指纹与密钥 ${formatKeyId(identity.keyId).slice(0, 9)}… 绑定`
-              : "需要先在“导出”页创建签名身份"
-          }
-          checked={b.creatorFromIdentity && !!identity}
-          onChange={(creatorFromIdentity) => identity && set({ creatorFromIdentity })}
-        />
-        <FieldRow label="日期">
-          <span className="text-sm text-foreground-strong tabular-nums">
-            {dateFromDay(dayFromDate(new Date())).toISOString().slice(0, 10)}
-            <span className="ml-1.5 text-xs text-foreground-muted">按天精度写入</span>
-          </span>
-        </FieldRow>
-        <FieldRow label="作品序号">
-          <Segmented
-            size="sm"
-            value={b.serialMode}
-            onChange={(serialMode) => set({ serialMode })}
-            options={[
-              { value: "hash", label: "原图哈希" },
-              { value: "index", label: "批次序号" },
-              { value: "manual", label: "手动" },
-            ]}
-          />
-        </FieldRow>
-        {b.serialMode === "manual" && (
-          <FieldRow label="序号">
-            <NumberField value={b.serial} min={0} max={16383} onValueChange={(v) => set({ serial: v ?? 0 })} />
-          </FieldRow>
-        )}
-      </Section>
+          <Section title="创作者">
+            <Input
+              aria-label="创作者"
+              placeholder={derived ? "由签名身份派生" : "名字或数字工号"}
+              value={derived ? "" : b.creator}
+              disabled={derived}
+              onChange={(e) => set({ creator: e.target.value })}
+              endSlot={<span className="font-mono text-[11px] text-foreground-subtle">#{creatorHex}</span>}
+            />
+            {identity && (
+              <SwitchRow
+                label="用签名身份派生 ID"
+                hint={`指纹与密钥 ${formatKeyId(identity.keyId).slice(0, 9)}… 绑定`}
+                checked={b.creatorFromIdentity}
+                onChange={(creatorFromIdentity) => set({ creatorFromIdentity })}
+              />
+            )}
+          </Section>
 
-      <Section title="密钥与强度">
-        <FieldRow label="密钥">
-          <Segmented
-            size="sm"
-            value={customKey ? "private" : "public"}
-            onChange={(v) => set({ key: v === "public" ? DEFAULT_KEY : "" })}
-            options={[
-              { value: "public", label: "公开验证" },
-              { value: "private", label: "私有密钥" },
-            ]}
-          />
-        </FieldRow>
-        {customKey && (
-          <FieldRow label="私钥">
-            <Input type="password" placeholder="只有持有者能检出" value={b.key} onChange={(e) => set({ key: e.target.value })} />
-          </FieldRow>
-        )}
-        {customKey && !b.key && (
-          <Callout tone="warning">
-            {keyStripped ? "该模板导出时已去除私钥，" : ""}尚未填写私钥：在填写之前按公开密钥嵌入，任何人都能检出。
-          </Callout>
-        )}
-        <SliderRow label="CDP 强度" value={b.strength} min={3} max={9} step={0.5} onChange={(strength) => set({ strength })} />
-        <Callout>
-          强度 5 时实测 PSNR ≈ 39.5 dB，JPEG q50、缩放 25%、截图加边框均可检出。私有密钥仅影响 CDP；TrustMark
-          的载荷任何持有模型的人都能解出，勿放敏感信息。
-        </Callout>
-      </Section>
+          <More id="blind-more" label="序号、密钥与强度">
+            <Section description={`56 bit 指纹 + CRC-16：创作者 ID、日期（${today}，按天）与作品序号，完整信息写入本地注册表。`}>
+              <FieldRow label="作品序号">
+                <Segmented
+                  size="sm"
+                  value={b.serialMode}
+                  onChange={(serialMode) => set({ serialMode })}
+                  options={[
+                    { value: "hash", label: "原图哈希" },
+                    { value: "index", label: "批次序号" },
+                    { value: "manual", label: "手动" },
+                  ]}
+                />
+              </FieldRow>
+              {b.serialMode === "manual" && (
+                <FieldRow label="序号">
+                  <NumberField value={b.serial} min={0} max={16383} onValueChange={(v) => set({ serial: v ?? 0 })} />
+                </FieldRow>
+              )}
+              <FieldRow label="密钥">
+                <Segmented
+                  size="sm"
+                  value={customKey ? "private" : "public"}
+                  onChange={(v) => set({ key: v === "public" ? DEFAULT_KEY : "" })}
+                  options={[
+                    { value: "public", label: "公开验证" },
+                    { value: "private", label: "私有密钥" },
+                  ]}
+                />
+              </FieldRow>
+              {customKey && (
+                <FieldRow label="私钥">
+                  <Input type="password" placeholder="只有持有者能检出" value={b.key} onChange={(e) => set({ key: e.target.value })} />
+                </FieldRow>
+              )}
+              {customKey && !b.key && (
+                <Callout tone="warning">
+                  {keyStripped ? "该模板导出时已去除私钥，" : ""}尚未填写私钥：在填写之前按公开密钥嵌入，任何人都能检出。
+                </Callout>
+              )}
+              <SliderRow label="CDP 强度" value={b.strength} min={3} max={9} step={0.5} onChange={(strength) => set({ strength })} />
+              <p className="text-xs leading-relaxed text-foreground-muted">
+                强度 5 时 PSNR ≈ 39.5 dB。私有密钥只作用于 CDP；TrustMark 载荷任何持有模型的人都能解出，勿放敏感信息。
+              </p>
+            </Section>
+            <Section title="实测鲁棒性">
+              <table className="w-full text-xs">
+                <thead className="text-foreground-muted">
+                  <tr>
+                    <th className="py-1 text-left font-normal">处理</th>
+                    <th className="w-16 py-1 font-normal">CDP</th>
+                    <th className="w-20 py-1 font-normal">TrustMark</th>
+                  </tr>
+                </thead>
+                <tbody className="text-foreground-strong">
+                  {ROBUSTNESS.map(([k, a, c]) => (
+                    <tr key={k} className="border-t border-border-muted">
+                      <td className="py-1">{k}</td>
+                      <td className="py-1 text-center">{a}</td>
+                      <td className="py-1 text-center">{c}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </Section>
+          </More>
+        </>
+      )}
     </div>
   )
 }

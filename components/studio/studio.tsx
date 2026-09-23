@@ -13,7 +13,8 @@ import { cn } from "@/lib/utils"
 import { liveSupport } from "@/lib/watermark/live"
 import { previewWorker } from "@/lib/workers/client"
 
-import { AssetRail } from "./asset-rail"
+import { AssetStrip } from "./asset-strip"
+import { ExportBar } from "./export-bar"
 import { useLive } from "./live-preview"
 import { BlindPanel } from "./panels/blind-panel"
 import { ExportPanel } from "./panels/export-panel"
@@ -23,11 +24,29 @@ import { Stage } from "./stage"
 
 /** 三种水印的开关状态，用于标签页上的圆点提示 */
 function Dot({ on }: { on: boolean }) {
-  return <span className={cn("size-1.5 rounded-full", on ? "bg-success-emphasis" : "bg-border-strong")} />
+  return <span className={cn("size-1.5 shrink-0 rounded-full", on ? "bg-success-emphasis" : "bg-border-strong")} />
+}
+
+/** 署名（{author} 变量与盲水印创作者的默认值）：宽屏在顶栏内联，窄屏在“更多”弹层里 */
+function AuthorField() {
+  const author = useStudio((s) => s.job.author)
+  const setJob = useStudio((s) => s.setJob)
+  return (
+    <label className="flex flex-col gap-1.5 md:block">
+      <span className="text-xs text-foreground-muted md:sr-only">署名（用于 {"{author}"} 变量与盲水印）</span>
+      <Input
+        inputSize="sm"
+        className="w-full md:w-44"
+        placeholder="署名 {author}"
+        value={author}
+        onChange={(e) => setJob((j) => ({ ...j, author: e.target.value }))}
+      />
+    </label>
+  )
 }
 
 export function Studio() {
-  const { assets, activeId, job, addFiles, patchAsset, setJob, trustmarkReady, templates, activeTemplateId } = useStudio()
+  const { assets, activeId, job, addFiles, patchAsset, trustmarkReady, templates, activeTemplateId } = useStudio()
   const active = assets.find((a) => a.id === activeId)
   // 预览用“这张图实际会用的参数”：指定了其他模板的图显示该模板的效果（jobForAsset 输入不变时引用稳定）
   const pinnedId = active?.templateId
@@ -38,7 +57,8 @@ export function Studio() {
   const identityCreatorId = useIdentity((s) => s.creatorId)
 
   useEffect(() => {
-    useIdentity.getState().load()
+    const id = useIdentity.getState()
+    id.load().then(() => id.ensure())
   }, [])
 
   // 拖动滑杆时能否交给实时预览：能则暂停 CPU 管线，松手后再算一次全分辨率；不能则维持防抖 + CPU
@@ -104,7 +124,7 @@ export function Studio() {
 
   return (
     <div
-      className="flex min-h-dvh flex-col bg-background lg:h-dvh"
+      className="flex h-dvh flex-col overflow-hidden bg-background"
       onDragOver={(e) => {
         e.preventDefault()
         setDragOver(true)
@@ -116,33 +136,27 @@ export function Studio() {
         addFiles(Array.from(e.dataTransfer.files))
       }}
     >
-      <AppHeader>
+      <AppHeader extra={<AuthorField />}>
         <TemplateSwitcher />
-        <Input
-          inputSize="sm"
-          className="hidden w-48 sm:flex"
-          placeholder="署名 {author}"
-          value={job.author}
-          onChange={(e) => setJob((j) => ({ ...j, author: e.target.value }))}
-        />
       </AppHeader>
 
-      <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[15rem_1fr_22.5rem]">
-        <AssetRail />
-        <main className="h-[62vh] min-h-0 min-w-0 bg-background-subtle/40 lg:h-auto">
+      {/* 竖屏：上图下参数；宽屏/横屏：左图右参数（断点见 globals.css 的 wide 变体） */}
+      <div className="flex min-h-0 flex-1 flex-col wide:flex-row">
+        <main className="flex h-[46dvh] min-h-64 shrink-0 flex-col bg-background-subtle/40 md:h-[52dvh] wide:h-auto wide:min-h-0 wide:min-w-0 wide:flex-1 wide:shrink">
           <Stage asset={active} busy={busy} author={assetJob.author} index={activeIndex} support={support} />
+          <AssetStrip />
         </main>
-        <aside className="flex min-h-[70vh] flex-col border-t border-border lg:min-h-0 lg:border-t-0 lg:border-l">
-          <Tabs defaultValue="visible" className="flex min-h-0 flex-1 flex-col gap-0">
-            <div className="border-b border-border px-3 py-2">
+        <aside className="flex min-h-0 flex-1 flex-col border-t border-border wide:w-88 wide:flex-none wide:border-t-0 wide:border-l xl:w-96">
+          <Tabs defaultValue="visible" size="sm" className="flex min-h-0 flex-1 flex-col gap-0">
+            <div className="shrink-0 px-3 pt-3 pb-1">
               <TabsList className="w-full">
-                <TabsTrigger value="visible" className="flex-1 gap-1.5">
+                <TabsTrigger value="visible" className="flex-1">
                   显性 <Dot on={job.visible.some((l) => l.enabled)} />
                 </TabsTrigger>
-                <TabsTrigger value="glance" className="flex-1 gap-1.5">
+                <TabsTrigger value="glance" className="flex-1">
                   伪隐性 <Dot on={job.glance.enabled} />
                 </TabsTrigger>
-                <TabsTrigger value="blind" className="flex-1 gap-1.5">
+                <TabsTrigger value="blind" className="flex-1">
                   盲水印 <Dot on={job.blind.enabled} />
                 </TabsTrigger>
                 <TabsTrigger value="export" className="flex-1">
@@ -165,6 +179,7 @@ export function Studio() {
               </TabsContent>
             </ScrollArea>
           </Tabs>
+          <ExportBar activeAsset={active} />
         </aside>
       </div>
 

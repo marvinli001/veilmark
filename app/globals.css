@@ -9,6 +9,33 @@
 @custom-variant dark (&:is(.dark *));
 
 /*
+ * 工作台左右分栏的断点：宽屏（≥1024，含 iPad 横屏）或横放的手机/小窗（≥640 且横向）。
+ * 竖屏（手机、iPad 竖屏）改为上图下参数的纵向布局。
+ */
+@custom-variant wide {
+  @media (min-width: 64rem), (orientation: landscape) and (min-width: 40rem) {
+    @slot;
+  }
+}
+
+/* 高度很小（横放的手机）：压缩缩略图条、导出栏等纵向留白 */
+@custom-variant short (@media (max-height: 30rem));
+
+/* 只在有精确指针（鼠标/触控板）时显示的内容，例如 ⌥ 快捷键、拖拽/粘贴提示 */
+@custom-variant can-hover {
+  @media (hover: hover) and (pointer: fine) {
+    @slot;
+  }
+}
+
+@utility scrollbar-none {
+  scrollbar-width: none;
+  &::-webkit-scrollbar {
+    display: none;
+  }
+}
+
+/*
  * shadcn（Luma 风格）组件的 token 桥接到 appica 语义 token。
  * 两套库同名的 --background/--foreground/--primary/--border 直接沿用 appica 的值；
  * 只有 shadcn 独有的名字在这里映射，保证混用时视觉统一。
@@ -45,6 +72,33 @@
 @layer base {
   html {
     @apply font-sans;
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+  /* 横放的 iPhone：避开刘海一侧（viewport-fit=cover） */
+  body {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+}
+
+/*
+ * 触屏适配（不分层，优先级高于 Tailwind 工具类）：
+ * - 输入框字号不低于 16px，否则 iOS Safari 聚焦时会自动放大页面；
+ * - 滑杆的可触区域与滑块放大到手指尺寸（原生只有 12px）。
+ */
+@media (pointer: coarse) {
+  input:not([type="checkbox"], [type="radio"], [type="range"], [type="file"]),
+  textarea,
+  select {
+    font-size: 16px;
+  }
+  [data-slot="slider-control"] {
+    min-height: 2rem;
+  }
+  [data-slot="slider-thumb"] {
+    width: 1.25rem;
+    height: 1.25rem;
   }
 }
 

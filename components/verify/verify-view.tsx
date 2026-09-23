@@ -188,7 +188,7 @@ export function VerifyView() {
   return (
     <div className="flex min-h-dvh flex-col bg-background">
       <AppHeader />
-      <main className="mx-auto grid w-full max-w-6xl flex-1 gap-8 px-4 py-8 sm:px-6 lg:grid-cols-[1fr_1.1fr]">
+      <main className="mx-auto grid w-full max-w-6xl flex-1 grid-cols-1 gap-6 px-4 pt-6 pb-[max(2rem,env(safe-area-inset-bottom))] sm:px-6 md:gap-8 md:py-8 lg:grid-cols-[1fr_1.1fr]">
         <section className="flex min-w-0 flex-col gap-4">
           <div>
             <h1 className="text-xl font-semibold text-foreground-intense">验证水印与版权证书</h1>
@@ -210,7 +210,10 @@ export function VerifyView() {
               <img src={image.url} alt={image.file.name} className="absolute inset-0 size-full object-contain" />
             ) : (
               <span className="flex flex-col items-center gap-2 px-6 text-center text-sm text-foreground-muted">
-                <Upload className="size-5" /> 拖拽 / 粘贴 / 点击选择图片或证书
+                <Upload className="size-5" />
+                <span>
+                  <span className="hidden can-hover:inline">拖拽 / 粘贴 / </span>点击选择图片或证书
+                </span>
               </span>
             )}
             {busy && (
@@ -252,7 +255,7 @@ export function VerifyView() {
             )}
           </div>
 
-          <div className="grid gap-3 rounded-xl border border-border p-4">
+          <div className="grid grid-cols-1 gap-3 rounded-xl border border-border p-4">
             <label className="flex items-center justify-between gap-3 text-sm">
               <span>
                 同时用 TrustMark 检测

@@ -3,7 +3,7 @@
 import { Badge } from "@appica/ui-react/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@appica/ui-react/select"
 import { Toggle } from "@appica/ui-react/toggle"
-import { Loader2, ScanSearch, Zap } from "lucide-react"
+import { FlaskConical, ImagePlus, Loader2, ScanSearch, Zap } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { useStudio, type Asset } from "@/lib/store"
@@ -12,6 +12,7 @@ import { REVEAL_LABELS, type RevealKind } from "@/lib/watermark/glance/simulate"
 import type { LiveSupport } from "@/lib/watermark/live"
 import { previewWorker } from "@/lib/workers/client"
 
+import { pickImages } from "./asset-strip"
 import { Segmented } from "./controls"
 import { liveCanvas, onLiveFrame, useLive, useLivePreview } from "./live-preview"
 
@@ -37,7 +38,7 @@ function CanvasSlot({ kind, className, clipPath }: { kind: Surface; className: s
 }
 
 const REVEAL_ITEMS = [
-  { value: "none", label: "不模拟" },
+  { value: "none", label: "不模拟盗用" },
   { value: "diff", label: "差异 ×12 放大" },
   ...Object.entries(REVEAL_LABELS).map(([value, label]) => ({ value, label })),
 ]
@@ -53,7 +54,7 @@ function Loupe({
   src: string
   altSrc: string
   live: Surface | null
-  pos: { x: number; y: number; nx: number; ny: number } | null
+  pos: Pos | null
   zoom: number
 }) {
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -100,30 +101,42 @@ function Loupe({
   }, [pos, zoom, alt, live])
 
   if (!pos) return null
+  // 触屏时镜头放在手指上方，不被手指挡住
+  const lift = pos.touch ? 120 : 0
   return (
     <div
       className="pointer-events-none absolute z-20 overflow-hidden rounded-full border-2 border-background shadow-xl"
-      style={{ left: pos.x - 96, top: pos.y - 96, width: 192, height: 192 }}
+      style={{ left: pos.x - 96, top: Math.max(-40, pos.y - 96 - lift), width: 192, height: 192 }}
     >
       <canvas ref={canvas} width={384} height={384} className="size-full" />
-      <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-background-inverse/70 px-2 py-0.5 text-[10px] text-foreground-inverse">
-        {alt ? "原图" : "处理后"} · {zoom}× · ⌥ 切换
+      <span className="absolute bottom-3 left-1/2 -translate-x-1/2 rounded-full bg-background-inverse/70 px-2 py-0.5 text-[10px] whitespace-nowrap text-foreground-inverse">
+        {alt ? "原图" : "处理后"} · {zoom}×<span className="hidden can-hover:inline"> · ⌥ 切换</span>
       </span>
     </div>
   )
 }
 
-/** 在容器内按 contain 规则计算画框尺寸（div 没有固有尺寸，纯 CSS 的 aspect-ratio 无法同时受宽高约束） */
+type Pos = { x: number; y: number; nx: number; ny: number; touch: boolean }
+
+/** 按 contain 规则把宽高比为 aspect 的画面放进 w×h 的格子 */
+function fit(aspect: number, w: number, h: number) {
+  const fw = Math.max(0, Math.min(w, h * aspect))
+  return { w: fw, h: fw / aspect }
+}
+
+/**
+ * 在容器内按 contain 规则计算画框尺寸（div 没有固有尺寸，纯 CSS 的 aspect-ratio 无法同时受宽高约束）。
+ * 同时返回容器尺寸，并排对比据此决定左右还是上下排（手机竖屏上下排更大）。
+ */
 function useFitSize(aspect: number) {
   // 用 state 保存元素（回调 ref），元素挂载/替换时自动重新观察
   const [el, setEl] = useState<HTMLDivElement | null>(null)
-  const [size, setSize] = useState({ w: 0, h: 0 })
+  const [size, setSize] = useState({ w: 0, h: 0, cw: 0, ch: 0 })
   useEffect(() => {
     if (!el) return
     const ro = new ResizeObserver(([entry]) => {
       const { width, height } = entry.contentRect
-      const w = Math.min(width, height * aspect)
-      setSize({ w, h: w / aspect })
+      setSize({ ...fit(aspect, width, height), cw: width, ch: height })
     })
     ro.observe(el)
     return () => ro.disconnect()
@@ -156,7 +169,7 @@ export function Stage({
   const [split, setSplit] = useState(50)
   const [loupe, setLoupe] = useState(false)
   const [zoom, setZoom] = useState(4)
-  const [pos, setPos] = useState<{ x: number; y: number; nx: number; ny: number } | null>(null)
+  const [pos, setPos] = useState<Pos | null>(null)
   const [revealUrls, setRevealUrls] = useState<{ before?: string; after: string } | null>(null)
   const [revealBusy, setRevealBusy] = useState(false)
   const frame = useRef<HTMLDivElement>(null)
@@ -189,28 +202,53 @@ export function Stage({
     }
   }, [asset?.result, asset?.file, reveal])
 
-  const onMove = useCallback(
-    (e: React.PointerEvent) => {
-      const el = frame.current
-      if (!el) return
-      const r = el.getBoundingClientRect()
-      const nx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
-      const ny = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
-      if (dragging.current) setSplit(nx * 100)
-      if (loupe) setPos({ x: e.clientX - r.left, y: e.clientY - r.top, nx, ny })
-    },
-    [loupe]
-  )
+  /** 指针在画框内的位置；滑动对比时任意处按下/拖动都能移动分割线，放大镜在触屏上按住拖动查看 */
+  const locate = (e: React.PointerEvent) => {
+    const r = frame.current!.getBoundingClientRect()
+    const nx = Math.min(1, Math.max(0, (e.clientX - r.left) / r.width))
+    const ny = Math.min(1, Math.max(0, (e.clientY - r.top) / r.height))
+    return { x: e.clientX - r.left, y: e.clientY - r.top, nx, ny, touch: e.pointerType !== "mouse" }
+  }
+  const onDown = (e: React.PointerEvent) => {
+    if (!frame.current) return
+    const p = locate(e)
+    try {
+      // 拖出画框也继续跟手；指针已失效时会抛错，忽略即可
+      ;(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId)
+    } catch {}
+    if (loupe) return setPos(p)
+    if (compare === "slider") {
+      dragging.current = true
+      setSplit(p.nx * 100)
+    }
+  }
+  const onMove = (e: React.PointerEvent) => {
+    if (!frame.current) return
+    const p = locate(e)
+    if (dragging.current) setSplit(p.nx * 100)
+    // 鼠标悬停即显示放大镜；触屏只在按住时显示
+    if (loupe && (!p.touch || e.buttons)) setPos(p)
+  }
+  const onUp = (e: React.PointerEvent) => {
+    dragging.current = false
+    if (e.pointerType !== "mouse") setPos(null)
+  }
 
   if (!asset) {
     return (
-      <div className="grid h-full place-items-center p-10">
-        <div className="max-w-sm text-center">
-          <p className="text-lg font-medium text-foreground-intense">把图片拖进来开始</p>
-          <p className="mt-2 text-sm leading-relaxed text-foreground-muted">
-            支持 PNG / JPG / WebP，可多选、可直接 ⌘V 粘贴截图。所有处理都在你的浏览器本地完成，图片不会上传。
-          </p>
-        </div>
+      <div className="grid min-h-0 flex-1 place-items-center p-4">
+        <button
+          onClick={pickImages}
+          className="flex size-full max-h-96 max-w-xl flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border-strong px-6 text-center outline-ring-primary transition-colors hover:border-border-emphasis hover:bg-background"
+        >
+          <span className="grid size-12 place-items-center rounded-full bg-background-muted text-foreground-strong">
+            <ImagePlus className="size-5" />
+          </span>
+          <span className="text-base font-medium text-foreground-intense">选择图片开始</span>
+          <span className="max-w-xs text-sm leading-relaxed text-foreground-muted">
+            PNG / JPG / WebP，可多选<span className="hidden can-hover:inline">，也可以拖进来或 ⌘V 粘贴</span>。全部在本机处理，图片不上传。
+          </span>
+        </button>
       </div>
     )
   }
@@ -240,23 +278,35 @@ export function Stage({
       <img src={processed} alt="处理后" className={className} style={clipPath ? { clipPath } : undefined} draggable={false} />
     )
 
+  // 并排对比：左右排和上下排取画面更大的一种（手机竖屏通常是上下排）
+  const aspect = asset.width / asset.height
+  const CAPTION = 24
+  const across = fit(aspect, (fitSize.cw - 16) / 2, fitSize.ch - CAPTION)
+  const stacked = fit(aspect, fitSize.cw, (fitSize.ch - 16) / 2 - CAPTION)
+  const sideVertical = stacked.w > across.w
+  const pane = sideVertical ? stacked : across
+
   return (
-    <div className="flex h-full min-h-0 flex-col">
-      <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 sm:px-4">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="scrollbar-none flex shrink-0 items-center gap-2 overflow-x-auto px-3 pt-2.5 md:px-4">
         <Segmented
           size="sm"
-          className="w-auto"
+          className="w-auto shrink-0"
           value={compare}
           onChange={setCompare}
           options={[
-            { value: "slider", label: "滑动对比" },
+            { value: "slider", label: "对比" },
             { value: "side", label: "并排" },
             { value: "result", label: "仅结果" },
           ]}
         />
-        <Select value={reveal} onValueChange={(v) => setReveal((v ?? "none") as typeof reveal)} items={REVEAL_ITEMS}>
-          <SelectTrigger className="h-8 w-44 text-xs">
-            <SelectValue />
+        <Select size="sm" value={reveal} onValueChange={(v) => setReveal((v ?? "none") as typeof reveal)} items={REVEAL_ITEMS}>
+          <SelectTrigger
+            aria-label="模拟盗用"
+            className={cn("w-auto max-w-44 shrink-0 gap-1.5 text-xs", reveal !== "none" && "border-warning-emphasis bg-warning-subtle")}
+          >
+            <FlaskConical className="size-3.5 shrink-0 text-foreground-muted" />
+            <SelectValue>{(v: string) => (v === "none" ? "模拟盗用" : REVEAL_ITEMS.find((i) => i.value === v)?.label)}</SelectValue>
           </SelectTrigger>
           <SelectContent>
             {REVEAL_ITEMS.map((i) => (
@@ -268,77 +318,85 @@ export function Stage({
         </Select>
         <Toggle
           pressed={loupe}
-          onPressedChange={setLoupe}
-          className="flex h-8 items-center gap-1.5 rounded-md px-2.5 text-xs text-foreground-muted hover:bg-background-muted data-pressed:bg-background-muted data-pressed:text-foreground-intense"
+          onPressedChange={(v) => {
+            setLoupe(v)
+            setPos(null)
+          }}
+          aria-label="放大镜"
+          className="flex h-8 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs text-foreground-muted hover:bg-background-muted data-pressed:bg-background-muted data-pressed:text-foreground-intense"
         >
-          <ScanSearch className="size-4" /> 放大镜
+          <ScanSearch className="size-4" /> <span className="hidden md:inline">放大镜</span>
         </Toggle>
         {loupe && (
           <Segmented
             size="sm"
-            className="w-auto"
+            className="w-auto shrink-0"
             value={String(zoom)}
             onChange={(v) => setZoom(Number(v))}
             options={["2", "4", "8"].map((z) => ({ value: z, label: `${z}×` }))}
           />
         )}
-        <div className="ml-auto flex items-center gap-2 text-xs text-foreground-muted">
+        <div className="ml-auto flex shrink-0 items-center gap-2 text-xs text-foreground-muted">
           {liveSurface && (
             <Badge variant="info" size="sm" title="拖动期间的近似预览，松手后替换为全分辨率计算结果">
               <Zap className="size-3" />
-              {liveSurface === "gl" ? "GPU 实时预览" : "实时预览 · 显示分辨率"}
+              <span className="hidden lg:inline">{liveSurface === "gl" ? "GPU 实时预览" : "实时预览 · 显示分辨率"}</span>
             </Badge>
           )}
           {liveUnavailable && (
-            <Badge variant="soft" size="sm" title="拖动时改为防抖后 CPU 全分辨率计算">
+            <Badge variant="soft" size="sm" className="hidden lg:inline-flex" title="拖动时改为防抖后 CPU 全分辨率计算">
               实时预览不可用：{liveUnavailable}
             </Badge>
           )}
           {(busy || revealBusy) && <Loader2 className="size-3.5 animate-spin" />}
           {report && (
-            <>
-              <Badge variant="soft" size="sm" className="tabular-nums">
+            <span className="hidden gap-2 xl:flex">
+              <Badge variant="soft" size="sm" className="tabular-nums" title="峰值信噪比：越高越接近原图">
                 PSNR {Number.isFinite(report.psnr) ? report.psnr.toFixed(1) : "∞"} dB
               </Badge>
               {report.payloadHex && (
-                <Badge variant="soft" size="sm" className="font-mono">
+                <Badge variant="soft" size="sm" className="font-mono" title="盲水印指纹">
                   ID {report.payloadHex}
                 </Badge>
               )}
-            </>
+            </span>
           )}
         </div>
       </div>
 
-      <div ref={fitRef} className="relative m-3 grid min-h-0 flex-1 place-items-center sm:m-6">
+      <div ref={fitRef} className="relative m-3 grid min-h-0 flex-1 place-items-center md:m-5 short:my-2">
         {compare === "side" ? (
-          <div className="absolute inset-0 grid grid-cols-2 place-items-center gap-4">
+          <div className={cn("absolute inset-0 flex items-center justify-center gap-4", sideVertical && "flex-col")}>
             {[
               { src: original, label: revealUrls ? "原图 · 同样处理" : "原图", processed: false },
               { src: processed, label: revealUrls ? "水印图 · 同样处理" : "处理后", processed: true },
-            ].map((p) => {
-              const cls = "checkerboard max-h-[calc(100%-1.5rem)] min-h-0 max-w-full rounded-lg object-contain shadow-sm"
-              return (
-                <figure key={p.label} className="flex max-h-full min-h-0 flex-col items-center gap-2">
+            ].map((p) => (
+              <figure key={p.label} className="flex flex-col items-center gap-1.5">
+                <div className="checkerboard overflow-hidden rounded-lg shadow-sm" style={{ width: pane.w, height: pane.h }}>
                   {p.processed ? (
-                    processedNode(cls)
+                    processedNode("size-full object-contain")
                   ) : (
                     // eslint-disable-next-line @next/next/no-img-element
-                    <img src={p.src} alt={p.label} className={cls} />
+                    <img src={p.src} alt={p.label} className="size-full object-contain" draggable={false} />
                   )}
-                  <figcaption className="text-xs text-foreground-muted">{p.label}</figcaption>
-                </figure>
-              )
-            })}
+                </div>
+                <figcaption className="text-xs leading-4 text-foreground-muted">{p.label}</figcaption>
+              </figure>
+            ))}
           </div>
         ) : (
           <div
             ref={frame}
-            className="checkerboard absolute touch-none overflow-hidden rounded-lg shadow-sm select-none"
+            className={cn(
+              "checkerboard absolute touch-none overflow-hidden rounded-lg shadow-sm select-none",
+              loupe ? "cursor-crosshair" : compare === "slider" && "cursor-ew-resize"
+            )}
             style={{ width: fitSize.w, height: fitSize.h }}
+            onPointerDown={onDown}
             onPointerMove={onMove}
-            onPointerLeave={() => setPos(null)}
-            onPointerUp={() => (dragging.current = false)}
+            onPointerUp={onUp}
+            onPointerCancel={onUp}
+            onPointerLeave={(e) => e.pointerType === "mouse" && setPos(null)}
           >
             {compare === "result" ? (
               processedNode("absolute inset-0 size-full object-contain")
@@ -349,23 +407,16 @@ export function Stage({
             {compare === "slider" && (
               <>
                 {processedNode("absolute inset-0 size-full object-contain", `inset(0 0 0 ${split}%)`)}
-                <div
-                  className="absolute inset-y-0 z-10 w-8 -translate-x-1/2 cursor-ew-resize"
-                  style={{ left: `${split}%` }}
-                  onPointerDown={(e) => {
-                    dragging.current = true
-                    ;(e.target as HTMLElement).setPointerCapture(e.pointerId)
-                  }}
-                >
+                <div className="pointer-events-none absolute inset-y-0 z-10 w-8 -translate-x-1/2" style={{ left: `${split}%` }}>
                   <div className="mx-auto h-full w-px bg-background shadow-[0_0_0_1px_var(--border-strong)]" />
-                  <div className="absolute top-1/2 left-1/2 grid size-7 -translate-1/2 place-items-center rounded-full bg-background text-[10px] text-foreground-strong shadow-md">
+                  <div className="absolute top-1/2 left-1/2 grid size-8 -translate-1/2 place-items-center rounded-full bg-background text-xs text-foreground-strong shadow-md">
                     ⇆
                   </div>
                 </div>
-                <span className="absolute top-2 left-2 rounded bg-background-inverse/60 px-1.5 py-0.5 text-[10px] text-foreground-inverse">
+                <span className="pointer-events-none absolute top-2 left-2 rounded bg-background-inverse/60 px-1.5 py-0.5 text-[10px] text-foreground-inverse">
                   {revealUrls ? "原图 · 同样处理" : "原图"}
                 </span>
-                <span className="absolute top-2 right-2 rounded bg-background-inverse/60 px-1.5 py-0.5 text-[10px] text-foreground-inverse">
+                <span className="pointer-events-none absolute top-2 right-2 rounded bg-background-inverse/60 px-1.5 py-0.5 text-[10px] text-foreground-inverse">
                   {revealUrls ? "水印图 · 同样处理" : "处理后"}
                 </span>
               </>
@@ -375,19 +426,17 @@ export function Stage({
         )}
         {pinned && (
           <div className="absolute top-0 left-1/2 z-10 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-background/90 py-1 pr-1 pl-3 text-xs text-foreground-strong shadow-sm backdrop-blur-sm">
-            <span className="truncate">
-              此图使用模板「{pinned.name}」，右侧面板的修改不影响它
-            </span>
+            <span className="truncate">此图固定使用模板「{pinned.name}」，参数面板的修改不影响它</span>
             <button
               className="shrink-0 rounded-full bg-background-muted px-2 py-0.5 text-foreground-intense hover:bg-background-strong"
               onClick={() => setAssetTemplate(asset.id, undefined)}
             >
-              改为跟随当前
+              改为跟随
             </button>
           </div>
         )}
         {asset.status === "error" && (
-          <div className={cn("absolute bottom-4 rounded-lg bg-error-subtle px-3 py-2 text-xs text-foreground-strong")}>
+          <div className="absolute bottom-2 max-w-[calc(100%-1rem)] rounded-lg bg-error-subtle px-3 py-2 text-xs break-all text-foreground-strong">
             处理失败：{asset.error}
           </div>
         )}

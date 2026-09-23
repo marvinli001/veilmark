@@ -9,6 +9,9 @@ import { bufferOf, fromBase64Url, sha256, toBase64Url, toHex, utf8 } from "./cor
  * 签名只证明“这把密钥的持有者在 issuedAt 时自行声明了这些内容”，
  * 不是权威时间戳，也不是法律意义上的权属认定。
  *
+ * 默认零配置：工作台首次打开时静默生成一把本机密钥（不弹窗、不要口令），证书署名取作品的“署名”字段。
+ * 想跨设备沿用同一身份时，才需要在“高级”里新建可备份的身份或从备份恢复。
+ *
  * 存储策略：
  * - 优先 WebCrypto Ed25519，私钥以“不可导出”的 CryptoKey 存进 IndexedDB——页面脚本也读不出私钥字节；
  * - 浏览器不支持时回退 @noble/ed25519，此时私钥只能以字节形式保存（在说明里提示）；
@@ -234,6 +237,16 @@ export async function restoreIdentity(text: string, passphrase: string): Promise
     seed.fill(0)
   }
 }
+
+/**
+ * 证书里的创作者：署名取这张图实际使用的“署名”字段（模板可以各自不同），没填时退回身份自带的名字
+ * （只有从备份恢复的旧身份才有）。名字只是自我声明，身份由公钥决定。
+ */
+export const certificateCreator = (id: Pick<PublicIdentity, "name" | "publicKey" | "keyId">, author: string) => ({
+  name: author.trim() || id.name,
+  publicKey: id.publicKey,
+  keyId: id.keyId,
+})
 
 export const toPublic = ({ privateKey: _drop, ...pub }: IdentityRecord): PublicIdentity => {
   void _drop
