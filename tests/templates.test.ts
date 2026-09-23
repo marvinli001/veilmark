@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest"
 
 import { DEFAULT_KEY } from "../lib/watermark/blind/classic"
+import { glancePreset } from "../lib/watermark/glance/types"
 import { defaultJob } from "../lib/watermark/pipeline"
 import {
   builtinTemplates,
@@ -55,6 +56,13 @@ describe("migrateJob", () => {
     expect(j.blind.engine).toBe("dual")
     expect(j.blind.key).toBe(DEFAULT_KEY)
     expect(j.export.format).toBe("png")
+  })
+
+  it("hybrid 模式保留，并以 hybrid 预设为骨架补齐", () => {
+    const j = migrateJob({ glance: { enabled: true, mode: "hybrid" } })
+    expect(j.glance.mode).toBe("hybrid")
+    expect(j.glance.tone).toEqual(glancePreset("hybrid").tone)
+    expect(j.glance.pantograph.enabled).toBe(true)
   })
 
   it("非法类型与越界枚举回退默认值，未知字段保留", () => {

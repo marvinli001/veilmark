@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest"
 import { createPlane, resizePlane, resizeRGBA, type RGBAImage } from "../lib/watermark/core/image"
 import { applyGlance } from "../lib/watermark/glance/cpu"
 import { simulateReveal } from "../lib/watermark/glance/simulate"
-import { glancePreset } from "../lib/watermark/glance/types"
+import { glancePreset, type GlanceConfig } from "../lib/watermark/glance/types"
 
 /** 中灰平图 + 左半边为“信息区”的掩膜：最干净地度量隐蔽性与显形度 */
 function fixture() {
@@ -70,6 +70,25 @@ describe("伪隐性水印", () => {
     cfg.tone.enabled = false
     cfg.chroma.axis = "blue-yellow"
     expect(halfContrast(applyGlance(img, mask, cfg))).toBeLessThan(0.6)
+  })
+
+  it("打印+截图：打印层与 print 一致，低频层明显强于 print", () => {
+    const { img, mask } = fixture()
+    const hybrid = glancePreset("hybrid")
+    const print = glancePreset("print")
+    expect(hybrid.grating).toEqual(print.grating)
+    expect(hybrid.pantograph).toEqual(print.pantograph)
+    // 截图≈适屏缩略：高频层被平均掉，留下来的只有低频层
+    const lowOnly = (c: GlanceConfig): GlanceConfig => ({
+      ...c,
+      feather: 0,
+      adaptive: 0,
+      grating: { ...c.grating, enabled: false },
+      pantograph: { ...c.pantograph, enabled: false },
+    })
+    const h = halfContrast(applyGlance(img, mask, lowOnly(hybrid)))
+    const p = halfContrast(applyGlance(img, mask, lowOnly(print)))
+    expect(h).toBeGreaterThan(1.5 * p)
   })
 
   it("掩膜与图同尺寸时 resizePlane 不改变数据", () => {

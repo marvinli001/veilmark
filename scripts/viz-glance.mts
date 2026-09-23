@@ -5,7 +5,7 @@ import { simulateReveal, type RevealKind } from "../lib/watermark/glance/simulat
 import { psnr, type RGBAImage } from "../lib/watermark/core/image"
 import { loadRGBA, toSharp } from "../tests/helpers/image-io"
 
-const [src, out, mode] = process.argv.slice(2) as [string, string, "daily" | "print" | "screenshot"]
+const [src, out, mode] = process.argv.slice(2) as [string, string, "daily" | "print" | "screenshot" | "hybrid"]
 const img = await loadRGBA(src, 2400)
 const W = img.width, H = img.height, short = Math.min(W, H)
 const fs = Math.round(short * 0.09)

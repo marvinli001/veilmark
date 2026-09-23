@@ -41,7 +41,7 @@ async function run(label: string, img: RGBAImage) {
   console.log(`\n## ${label} ${img.width}×${img.height}`)
   console.log(`| 模式 | PSNR | 适屏可见度 ΔY/ΔC | ${KINDS.map((k) => REVEAL_LABELS[k]).join(" | ")} |`)
   console.log(`| --- | --- | --- | ${KINDS.map(() => "---").join(" | ")} |`)
-  for (const mode of ["daily", "print", "screenshot"] as const) {
+  for (const mode of ["daily", "print", "screenshot", "hybrid"] as const) {
     const wm = applyGlance(img, mask, glancePreset(mode))
     const base = regionContrast(img, wm, mask)
     const cells = KINDS.map((k) => {

@@ -14,9 +14,12 @@ import { defaultTextStyle, type LayoutSpec, type TextStyle } from "../visible/ty
  *
  * 高频层（grating/pantograph）必须无损导出（PNG / 无损 WebP），平台二次 JPEG 压缩会抹掉它们；
  * 低频层（tone/chroma）能扛住截图与压缩，但显形依赖“调色”类二次加工。
+ *
+ * 四层共用一张掩膜（字号、羽化只有一份）和同一份“日常看不见”的余量，所以预设是单选：
+ * 叠加得越多，适屏与 1:1 下越容易露馅。hybrid 是打印与截图的折中配比，见 glancePreset。
  */
 
-export type GlanceMode = "daily" | "print" | "screenshot" | "custom"
+export type GlanceMode = "daily" | "print" | "screenshot" | "hybrid" | "custom"
 
 /** auto：避开画面主色所在的轴，防止“拉饱和度”时该通道先被截断吞掉信号 */
 export type ChromaAxis = "auto" | "blue-yellow" | "red-green"
@@ -95,6 +98,20 @@ export function glancePreset(mode: Exclude<GlanceMode, "custom">): GlanceConfig 
         pantograph: { enabled: false, amplitude: 0, coarsePeriod: 6 },
         tone: { enabled: true, amplitude: 2.4, shadowBias: 0.5 },
         chroma: { enabled: true, amplitude: 8, axis: "auto" },
+      }
+    case "hybrid":
+      // 打印层原样保留；低频层拉到接近 screenshot，截图后调色仍能显形。
+      // 字号与羽化取两者之间：打印要小字硬边，截图要大字软边。
+      // 合成图实测：适屏可见度不高于 screenshot，最近邻/打印显形不低于 print（docs/ARCHITECTURE.md 2.3）
+      return {
+        ...common,
+        text: { ...baseMaskText(), fontSize: 11 },
+        feather: 2.5,
+        adaptive: 0.9,
+        grating: { enabled: true, amplitude: 4, kind: "checker", period: 2, angle: 0 },
+        pantograph: { enabled: true, amplitude: 4, coarsePeriod: 5 },
+        tone: { enabled: true, amplitude: 2.2, shadowBias: 0.45 },
+        chroma: { enabled: true, amplitude: 7.5, axis: "auto" },
       }
   }
 }

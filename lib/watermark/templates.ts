@@ -45,7 +45,7 @@ const ENUMS: Record<string, readonly string[]> = {
   "blind.engine": ["cdp", "trustmark", "dual"],
   "blind.serialMode": ["hash", "index", "manual"],
   "export.format": ["png", "webp-lossless", "webp", "jpeg"],
-  "glance.mode": ["daily", "print", "screenshot", "custom"],
+  "glance.mode": ["daily", "print", "screenshot", "hybrid", "custom"],
   "glance.grating.kind": ["checker", "lines"],
   "glance.chroma.axis": ["auto", "blue-yellow", "red-green"],
   "glance.layout.mode": ["single", "tile", "band"],
@@ -137,7 +137,7 @@ export function migrateJob(input: unknown): WatermarkJob {
   const job = mergeInto(base, src, "") as WatermarkJob
   // glance 以对应预设为骨架：旧模板缺某个触发层时，补上的是“同一预设”下的合理值
   const g = isObj(src.glance) ? src.glance : {}
-  const presetMode = g.mode === "print" || g.mode === "screenshot" ? g.mode : "daily"
+  const presetMode = g.mode === "print" || g.mode === "screenshot" || g.mode === "hybrid" ? g.mode : "daily"
   const glanceBase = { ...glancePreset(presetMode), enabled: false }
   job.glance = mergeInto(glanceBase, g, "glance") as WatermarkJob["glance"]
   job.glance.text = { ...job.glance.text, fill: migrateFill(isObj(g.text) ? g.text.fill : undefined) }

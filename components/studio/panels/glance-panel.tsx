@@ -15,6 +15,7 @@ const MODE_COPY: Record<GlanceMode, string> = {
   daily: "扛截图与压缩；被拉对比度、饱和度或去色时显形。",
   print: "适屏浏览时隐形；被缩放、打印或锐化后显形。需无损导出。",
   screenshot: "更大更低频的文字，截图后仍留存；建议同时开启盲水印。",
+  hybrid: "保留打印显形，同时加强截图后仍留存的低频层；适屏更易察觉一些。需无损导出，建议开启盲水印。",
   custom: "已自定义触发层，可在下方“触发层”里调整。",
 }
 
@@ -54,6 +55,7 @@ export function GlancePanel() {
                 { value: "daily", label: "日常隐藏" },
                 { value: "print", label: "打印显形" },
                 { value: "screenshot", label: "抗截图" },
+                { value: "hybrid", label: "打印+截图" },
               ]}
             />
             <p className="text-xs leading-relaxed text-foreground-muted">{MODE_COPY[g.mode]}</p>

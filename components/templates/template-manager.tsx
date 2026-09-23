@@ -44,7 +44,7 @@ function summary(t: Template) {
   const parts: string[] = []
   const layers = j.visible.filter((l) => l.enabled)
   if (layers.length) parts.push(`显性 ${layers.length} 层`)
-  if (j.glance.enabled) parts.push(`伪隐性·${{ daily: "日常隐藏", print: "打印显形", screenshot: "抗截图", custom: "自定义" }[j.glance.mode]}`)
+  if (j.glance.enabled) parts.push(`伪隐性·${{ daily: "日常隐藏", print: "打印显形", screenshot: "抗截图", hybrid: "打印+截图", custom: "自定义" }[j.glance.mode]}`)
   if (j.blind.enabled) parts.push(`盲水印·${{ cdp: "CDP", trustmark: "TrustMark", dual: "双引擎" }[j.blind.engine]}`)
   parts.push(j.export.format.toUpperCase())
   return parts.join(" · ")
