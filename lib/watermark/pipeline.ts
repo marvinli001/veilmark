@@ -24,6 +24,11 @@ export interface BlindConfig {
   key: string
   strength: number
   creator: string
+  /**
+   * 用签名身份派生创作者 ID（SHA-256(公钥) 前 24 bit），让指纹与密钥绑定。
+   * 开启后由主线程在提交处理前把 creator 换成派生出的数字 ID（见 lib/store.ts 的 processingJob）
+   */
+  creatorFromIdentity: boolean
   /** 序号来源：原图哈希 / 批量序号 / 手动 */
   serialMode: "hash" | "index" | "manual"
   serial: number
@@ -56,6 +61,7 @@ export const defaultJob = (): WatermarkJob => ({
     key: DEFAULT_KEY,
     strength: 5,
     creator: "",
+    creatorFromIdentity: false,
     serialMode: "hash",
     serial: 0,
   },

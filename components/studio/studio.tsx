@@ -7,10 +7,10 @@ import { useEffect, useRef, useState } from "react"
 
 import { AppHeader } from "@/components/app-header"
 import { TemplateSwitcher } from "@/components/templates/template-switcher"
-import { jobForAsset, useStudio } from "@/lib/store"
+import { useIdentity } from "@/lib/identity-store"
+import { jobForAsset, processingJob, useStudio } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { liveSupport } from "@/lib/watermark/live"
-import type { WatermarkJob } from "@/lib/watermark/pipeline"
 import { previewWorker } from "@/lib/workers/client"
 
 import { AssetRail } from "./asset-rail"
@@ -35,6 +35,11 @@ export function Studio() {
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const seq = useRef(0)
+  const identityCreatorId = useIdentity((s) => s.creatorId)
+
+  useEffect(() => {
+    useIdentity.getState().load()
+  }, [])
 
   // 拖动滑杆时能否交给实时预览：能则暂停 CPU 管线，松手后再算一次全分辨率；不能则维持防抖 + CPU
   const interacting = useStudio((s) => s.interacting)
@@ -70,8 +75,7 @@ export function Studio() {
     const id = ++seq.current
     // 拖动中：作废在途结果（否则它落地后会被当成“新结果”，把实时预览换回旧图），等松手再算
     if (paused) return
-    const effective: WatermarkJob =
-      assetJob.blind.engine !== "cdp" && !trustmarkReady ? { ...assetJob, blind: { ...assetJob.blind, engine: "cdp" } } : assetJob
+    const effective = processingJob(assetJob, { trustmarkReady, identityCreatorId })
     const timer = setTimeout(async () => {
       setBusy(true)
       patchAsset(active.id, { status: "processing" })
@@ -96,7 +100,7 @@ export function Studio() {
     return () => clearTimeout(timer)
     // 只在图片或配置变化时重跑；patchAsset 引用稳定
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.id, assetJob, trustmarkReady, paused])
+  }, [active?.id, assetJob, trustmarkReady, paused, identityCreatorId])
 
   return (
     <div

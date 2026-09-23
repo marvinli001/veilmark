@@ -51,3 +51,15 @@ export async function verifyImage(
   }
   return hits
 }
+
+/**
+ * 把各引擎的检测结果归并成“图中指纹”，供证书核验使用。
+ * 双引擎时两者可能只检出其一；优先取与证书一致的那一个，避免一个引擎误读就判失败。
+ */
+export function fingerprintFromHits(hits: VerifyHit[], expectedHex?: string): { payloadHex: string | null; detail?: string } {
+  const found = hits.filter((h) => h.found && h.payloadHex)
+  const pick = found.find((h) => h.payloadHex === expectedHex) ?? found[0]
+  if (!pick) return { payloadHex: null }
+  const engine = pick.engine === "cdp" ? `CDP · ${pick.key === DEFAULT_KEY ? "公开密钥" : "私有密钥"}` : "TrustMark"
+  return { payloadHex: pick.payloadHex, detail: `${engine} · ${pick.detail}` }
+}

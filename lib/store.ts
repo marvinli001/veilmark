@@ -132,6 +132,35 @@ export function jobForAsset(
 }
 const withAuthorCache = new WeakMap<WatermarkJob, Map<string, WatermarkJob>>()
 
+/**
+ * 真正提交给 Worker 的参数：
+ * - TrustMark 模型未加载时降级为 CDP（与预览一致）；
+ * - 开启“用签名身份派生创作者 ID”时，把 creator 换成派生出的数字 ID（纯数字 < 2^24 会被原样写入指纹）。
+ * 输入不变时返回同一引用，下游 effect 不会反复触发。
+ */
+export function processingJob(job: WatermarkJob, opts: { trustmarkReady: boolean; identityCreatorId: number | null }): WatermarkJob {
+  const downgrade = job.blind.engine !== "cdp" && !opts.trustmarkReady
+  const derive = job.blind.creatorFromIdentity && opts.identityCreatorId != null
+  if (!downgrade && !derive) return job
+  const key = `${downgrade}|${derive ? opts.identityCreatorId : ""}`
+  let byOpts = processingCache.get(job)
+  if (!byOpts) processingCache.set(job, (byOpts = new Map()))
+  let j = byOpts.get(key)
+  if (!j) {
+    j = {
+      ...job,
+      blind: {
+        ...job.blind,
+        ...(downgrade ? { engine: "cdp" as const } : {}),
+        ...(derive ? { creator: String(opts.identityCreatorId) } : {}),
+      },
+    }
+    byOpts.set(key, j)
+  }
+  return j
+}
+const processingCache = new WeakMap<WatermarkJob, Map<string, WatermarkJob>>()
+
 // ---------------------------------------------------------------------------
 // 持久化：工作参数存 IndexedDB（图片水印的 dataURL 会撑爆 localStorage）
 // ---------------------------------------------------------------------------

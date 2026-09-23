@@ -8,13 +8,15 @@ import { Download, Loader2 } from "lucide-react"
 import { useState } from "react"
 
 import { TRUSTMARK_BASE } from "@/lib/config"
+import { useIdentity } from "@/lib/identity-store"
 import { useStudio } from "@/lib/store"
 import { DEFAULT_KEY } from "@/lib/watermark/blind/classic"
 import { creatorIdFromText, dateFromDay, dayFromDate } from "@/lib/watermark/blind/payload"
+import { formatKeyId } from "@/lib/watermark/identity"
 import type { BlindConfig } from "@/lib/watermark/pipeline"
 import { previewWorker } from "@/lib/workers/client"
 
-import { Callout, FieldRow, Section, Segmented, SliderRow } from "../controls"
+import { Callout, FieldRow, Section, Segmented, SliderRow, SwitchRow } from "../controls"
 
 const ROBUSTNESS = [
   ["JPEG q50 / WebP", "✓", "✓"],
@@ -34,6 +36,12 @@ export function BlindPanel() {
   const [loadError, setLoadError] = useState<string | null>(null)
   const needsModel = b.engine !== "cdp"
   const customKey = b.key !== DEFAULT_KEY
+  const identity = useIdentity((s) => s.identity)
+  const identityCreatorId = useIdentity((s) => s.creatorId)
+  const derived = b.creatorFromIdentity && identityCreatorId != null
+  const creatorHex = (derived ? identityCreatorId : creatorIdFromText(b.creator || job.author || "anonymous"))
+    .toString(16)
+    .padStart(6, "0")
 
   return (
     <div>
@@ -103,11 +111,22 @@ export function BlindPanel() {
         <FieldRow label="创作者">
           <Input
             placeholder="名字或数字工号"
-            value={b.creator}
+            value={derived ? "" : b.creator}
+            disabled={derived}
             onChange={(e) => set({ creator: e.target.value })}
-            endSlot={<span className="font-mono text-[11px] text-foreground-subtle">#{creatorIdFromText(b.creator || job.author || "anonymous").toString(16).padStart(6, "0")}</span>}
+            endSlot={<span className="font-mono text-[11px] text-foreground-subtle">#{creatorHex}</span>}
           />
         </FieldRow>
+        <SwitchRow
+          label="用签名身份派生创作者 ID"
+          hint={
+            identity
+              ? `取 SHA-256(公钥) 前 24 bit，指纹与密钥 ${formatKeyId(identity.keyId).slice(0, 9)}… 绑定`
+              : "需要先在“导出”页创建签名身份"
+          }
+          checked={b.creatorFromIdentity && !!identity}
+          onChange={(creatorFromIdentity) => identity && set({ creatorFromIdentity })}
+        />
         <FieldRow label="日期">
           <span className="text-sm text-foreground-strong tabular-nums">
             {dateFromDay(dayFromDate(new Date())).toISOString().slice(0, 10)}
