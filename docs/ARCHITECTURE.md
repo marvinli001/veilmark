@@ -461,6 +461,7 @@ tests/                     vitest：payload / blind / glance / layout / template
 - **缓存**：`/models/*` 和 `*.wasm` 设置 `Cache-Control: public, max-age=31536000, immutable`。
 - **多线程 WASM（可选）**：需要跨源隔离（`COOP: same-origin` + `COEP: credentialless`）。目前不开启，默认 WebGPU 优先，单线程 WASM 兜底。
 - **隐私**：不上传任何像素；注册表、模板、签名私钥只存在本机。
+- **访问统计**：根布局挂了 Vercel Web Analytics（`@vercel/analytics`），只记页面访问，不用 Cookie，不涉及图片；仅在 Vercel 部署上生效，本地开发不上报。
 
 ---
 

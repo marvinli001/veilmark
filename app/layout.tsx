@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next"
 import { Geist_Mono, Inter } from "next/font/google"
 import { ThemeProvider } from "@appica/ui-react/providers/theme-provider"
 import { TooltipProvider } from "@appica/ui-react/tooltip"
+import { Analytics } from "@vercel/analytics/next"
 
 import "./globals.css"
 import { cn } from "@/lib/utils"
@@ -28,6 +29,7 @@ export default function RootLayout({ children }: Readonly<{ children: React.Reac
         <ThemeProvider>
           <TooltipProvider>{children}</TooltipProvider>
         </ThemeProvider>
+        <Analytics />
       </body>
     </html>
   )
