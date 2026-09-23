@@ -4,9 +4,11 @@ import * as Comlink from "comlink"
 import type { OrtModule, TrustMarkSessions } from "../watermark/blind/trustmark"
 import { bitmapToRGBA, decodeImage, encodeImage } from "../watermark/codec"
 import { amplifiedDiff, simulateReveal, type RevealKind } from "../watermark/glance/simulate"
+import { LivePreparer } from "../watermark/live"
 import { runPipeline, type PipelineReport, type WatermarkJob } from "../watermark/pipeline"
 import type { TemplateContext } from "../watermark/visible/types"
 import { verifyImage } from "../watermark/verify"
+import { registerFonts, type FontSpec } from "./fonts"
 
 /**
  * 所有重计算都在 Worker 里：解码、合成、盲水印闭环、编码。
@@ -14,6 +16,8 @@ import { verifyImage } from "../watermark/verify"
  */
 
 let trustmark: { ort: OrtModule; sessions: TrustMarkSessions } | undefined
+/** 页面字体注册完成前不要画字，否则第一张图会用回退字体 */
+let fontsReady: Promise<unknown> = Promise.resolve()
 const imageAssets = new Map<string, ImageBitmap>()
 
 async function ensureTrustMark(baseUrl: string, withEncoder: boolean) {
@@ -42,6 +46,9 @@ async function ensureImageAssets(job: WatermarkJob) {
   }
 }
 
+/** 实时预览的底图缓存：只保留当前这一张图 */
+let live: { assetId: string; prep: LivePreparer } | null = null
+
 export interface ProcessResult {
   blob: Blob
   width: number
@@ -50,6 +57,12 @@ export interface ProcessResult {
 }
 
 const api = {
+  /** 由 client.ts 在创建 Worker 后立即调用，把页面的网络字体（如 Inter）注册进来 */
+  registerFonts(specs: FontSpec[]) {
+    fontsReady = registerFonts(specs)
+    return fontsReady
+  },
+
   async registerImageAsset(src: string, blob: Blob) {
     imageAssets.set(src, await createImageBitmap(blob))
   },
@@ -60,7 +73,7 @@ const api = {
   },
 
   async process(file: Blob, job: WatermarkJob, tpl: TemplateContext): Promise<ProcessResult> {
-    await ensureImageAssets(job)
+    await Promise.all([fontsReady, ensureImageAssets(job)])
     const bitmap = await decodeImage(file)
     try {
       const { image, report } = await runPipeline(bitmap, job, tpl, {
@@ -73,6 +86,27 @@ const api = {
     } finally {
       bitmap.close()
     }
+  },
+
+  /**
+   * 实时预览所需的底图（显性已合成、伪隐性未叠加）与 R8 掩膜/JND 图。
+   * 结果用 transferable 传回，主线程直接上传为纹理；底图没变时不重复传。
+   */
+  async prepareLive(assetId: string, file: Blob, job: WatermarkJob, tpl: TemplateContext, haveBaseKey: string) {
+    await Promise.all([fontsReady, ensureImageAssets(job)])
+    if (live?.assetId !== assetId) {
+      live?.prep.dispose()
+      live = { assetId, prep: new LivePreparer(await decodeImage(file)) }
+    }
+    const r = await live.prep.prepare(job, tpl, { images: imageAssets }, haveBaseKey)
+    const transfer: Transferable[] = [r.mask.data.buffer, r.act.data.buffer]
+    if (r.base) transfer.push(r.base)
+    return Comlink.transfer(r, transfer)
+  },
+
+  /** 验收用：取回实时预览当前使用的浮点底图/掩膜/JND 图 */
+  liveSnapshot() {
+    return live?.prep.snapshot() ?? null
   },
 
   /** 盗用模拟：对原图与处理后图同时施加同一变换，返回 PNG 供对比 */

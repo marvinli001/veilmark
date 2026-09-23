@@ -4,7 +4,7 @@ import type { OrtModule, TrustMarkSessions } from "./blind/trustmark"
 import { psnr, type RGBAImage } from "./core/image"
 import { applyGlance } from "./glance/cpu"
 import { glancePreset, type GlanceConfig } from "./glance/types"
-import { renderTextMask, renderVisibleLayer, type RenderAssets } from "./visible/render"
+import { renderTextMask, renderVisibleLayer, type Ctx2D, type RenderAssets } from "./visible/render"
 import { defaultLayer, type TemplateContext, type VisibleLayer } from "./visible/types"
 
 /**
@@ -108,6 +108,24 @@ export function lossyExportWarnings(job: WatermarkJob): string[] {
   return w
 }
 
+/** 模板变量上下文：署名缺省取 job.author，宽高取实际画布 */
+export function pipelineContext(job: WatermarkJob, tpl: TemplateContext, W: number, H: number): TemplateContext {
+  return { ...tpl, author: tpl.author ?? job.author, width: W, height: H }
+}
+
+/**
+ * 管线第 1 步：把显性图层合成到画布上（画布上已有原图）。
+ * 实时预览的底图（显性已合成、伪隐性未叠加）也调用这里，保证预览与导出的底图一致。
+ */
+export function composeVisible(ctx: Ctx2D, job: WatermarkJob, context: TemplateContext, assets?: RenderAssets) {
+  for (const layer of job.visible) renderVisibleLayer(ctx, layer, context, assets)
+}
+
+/** 伪隐性水印的信息掩膜（管线第 2 步的输入），预览与导出共用 */
+export function glanceMask(job: WatermarkJob, context: TemplateContext, W: number, H: number) {
+  return renderTextMask(W, H, job.glance.text, job.glance.layout, context)
+}
+
 export async function runPipeline(
   source: ImageBitmap | RGBAImage,
   job: WatermarkJob,
@@ -129,14 +147,14 @@ export async function runPipeline(
   if ("close" in source) ctx.drawImage(source, 0, 0)
   else ctx.putImageData(new ImageData(new Uint8ClampedArray(source.data), W, H), 0, 0)
   const original = ctx.getImageData(0, 0, W, H)
-  const context: TemplateContext = { ...tpl, author: tpl.author ?? job.author, width: W, height: H }
+  const context = pipelineContext(job, tpl, W, H)
 
-  for (const layer of job.visible) renderVisibleLayer(ctx, layer, context, deps.assets)
+  composeVisible(ctx, job, context, deps.assets)
   lap("visible")
 
   let img: RGBAImage = ctx.getImageData(0, 0, W, H)
   if (job.glance.enabled) {
-    const mask = renderTextMask(W, H, job.glance.text, job.glance.layout, context)
+    const mask = glanceMask(job, context, W, H)
     img = applyGlance(img, mask, job.glance)
     lap("glance")
   }

@@ -3,16 +3,18 @@
 import { Input } from "@appica/ui-react/input"
 import { ScrollArea } from "@appica/ui-react/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@appica/ui-react/tabs"
-import { useEffect, useMemo, useRef, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 
 import { AppHeader } from "@/components/app-header"
 import { TemplateSwitcher } from "@/components/templates/template-switcher"
 import { jobForAsset, useStudio } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import { liveSupport } from "@/lib/watermark/live"
 import type { WatermarkJob } from "@/lib/watermark/pipeline"
 import { previewWorker } from "@/lib/workers/client"
 
 import { AssetRail } from "./asset-rail"
+import { useLive } from "./live-preview"
 import { BlindPanel } from "./panels/blind-panel"
 import { ExportPanel } from "./panels/export-panel"
 import { GlancePanel } from "./panels/glance-panel"
@@ -27,16 +29,30 @@ function Dot({ on }: { on: boolean }) {
 export function Studio() {
   const { assets, activeId, job, addFiles, patchAsset, setJob, trustmarkReady, templates, activeTemplateId } = useStudio()
   const active = assets.find((a) => a.id === activeId)
-  // 预览用“这张图实际会用的参数”：指定了其他模板的图显示该模板的效果
-  // 注意 jobForAsset 可能返回新对象（补署名），必须 memo，否则每次渲染都会触发重算
+  // 预览用“这张图实际会用的参数”：指定了其他模板的图显示该模板的效果（jobForAsset 输入不变时引用稳定）
   const pinnedId = active?.templateId
-  const assetJob = useMemo(
-    () => jobForAsset({ job, templates, activeTemplateId }, { templateId: pinnedId }),
-    [job, templates, activeTemplateId, pinnedId]
-  )
+  const assetJob = jobForAsset({ job, templates, activeTemplateId }, { templateId: pinnedId })
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const seq = useRef(0)
+
+  // 拖动滑杆时能否交给实时预览：能则暂停 CPU 管线，松手后再算一次全分辨率；不能则维持防抖 + CPU
+  const interacting = useStudio((s) => s.interacting)
+  const reveal = useStudio((s) => s.reveal)
+  const caps = useLive((s) => s.caps)
+  const support =
+    interacting && active
+      ? liveSupport(interacting, {
+          caps,
+          width: active.width,
+          height: active.height,
+          job: assetJob,
+          reveal,
+          pinned: !!pinnedId && pinnedId !== activeTemplateId,
+        })
+      : null
+  const paused = !!support?.ok
+  const activeIndex = assets.findIndex((a) => a.id === activeId)
 
   // 粘贴上传（截图工具复制后直接 ⌘V）
   useEffect(() => {
@@ -52,6 +68,8 @@ export function Studio() {
   useEffect(() => {
     if (!active) return
     const id = ++seq.current
+    // 拖动中：作废在途结果（否则它落地后会被当成“新结果”，把实时预览换回旧图），等松手再算
+    if (paused) return
     const effective: WatermarkJob =
       assetJob.blind.engine !== "cdp" && !trustmarkReady ? { ...assetJob, blind: { ...assetJob.blind, engine: "cdp" } } : assetJob
     const timer = setTimeout(async () => {
@@ -78,7 +96,7 @@ export function Studio() {
     return () => clearTimeout(timer)
     // 只在图片或配置变化时重跑；patchAsset 引用稳定
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.id, assetJob, trustmarkReady])
+  }, [active?.id, assetJob, trustmarkReady, paused])
 
   return (
     <div
@@ -108,7 +126,7 @@ export function Studio() {
       <div className="grid min-h-0 flex-1 grid-cols-1 lg:grid-cols-[15rem_1fr_22.5rem]">
         <AssetRail />
         <main className="h-[62vh] min-h-0 min-w-0 bg-background-subtle/40 lg:h-auto">
-          <Stage asset={active} busy={busy} />
+          <Stage asset={active} busy={busy} author={assetJob.author} index={activeIndex} support={support} />
         </main>
         <aside className="flex min-h-[70vh] flex-col border-t border-border lg:min-h-0 lg:border-t-0 lg:border-l">
           <Tabs defaultValue="visible" className="flex min-h-0 flex-1 flex-col gap-0">

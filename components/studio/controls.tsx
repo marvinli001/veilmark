@@ -7,7 +7,9 @@ import { Switch } from "@appica/ui-react/switch"
 import { Toggle } from "@appica/ui-react/toggle"
 import { ToggleGroup } from "@appica/ui-react/toggle-group"
 
+import { useStudio } from "@/lib/store"
 import { cn } from "@/lib/utils"
+import type { LiveKind } from "@/lib/watermark/live"
 
 /** 面板里反复出现的“标签 + 控件 + 数值”行，统一节奏与对齐 */
 
@@ -38,6 +40,11 @@ export function Section({
   )
 }
 
+/** 结束拖动：Base UI 的 onValueCommitted 与全局 pointerup 双保险（指针可能在滑杆外松开） */
+function endInteraction() {
+  useStudio.getState().setInteracting(null)
+}
+
 export function SliderRow({
   label,
   value,
@@ -47,6 +54,7 @@ export function SliderRow({
   onChange,
   format = (v) => String(v),
   disabled,
+  live,
 }: {
   label: string
   value: number
@@ -56,6 +64,8 @@ export function SliderRow({
   onChange: (v: number) => void
   format?: (v: number) => string
   disabled?: boolean
+  /** 拖动时由哪种实时预览接管画布；不传则维持“防抖 + CPU” */
+  live?: LiveKind
 }) {
   return (
     <div className={cn("grid grid-cols-[5.5rem_1fr_3.25rem] items-center gap-3", disabled && "opacity-50")}>
@@ -68,6 +78,16 @@ export function SliderRow({
         disabled={disabled}
         tooltipVisibility="never"
         thumbAriaLabel={label}
+        onPointerDown={
+          live && !disabled
+            ? () => {
+                useStudio.getState().setInteracting(live)
+                window.addEventListener("pointerup", endInteraction, { once: true })
+                window.addEventListener("pointercancel", endInteraction, { once: true })
+              }
+            : undefined
+        }
+        onValueCommitted={live ? endInteraction : undefined}
         onValueChange={(v) => onChange(typeof v === "number" ? v : v[0])}
       />
       <span className="text-right font-mono text-xs tabular-nums text-foreground-strong">{format(value)}</span>

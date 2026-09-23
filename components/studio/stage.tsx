@@ -3,15 +3,38 @@
 import { Badge } from "@appica/ui-react/badge"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@appica/ui-react/select"
 import { Toggle } from "@appica/ui-react/toggle"
-import { Loader2, ScanSearch } from "lucide-react"
+import { Loader2, ScanSearch, Zap } from "lucide-react"
 import { useCallback, useEffect, useRef, useState } from "react"
 
 import { useStudio, type Asset } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import { REVEAL_LABELS, type RevealKind } from "@/lib/watermark/glance/simulate"
+import type { LiveSupport } from "@/lib/watermark/live"
 import { previewWorker } from "@/lib/workers/client"
 
 import { Segmented } from "./controls"
+import { liveCanvas, onLiveFrame, useLive, useLivePreview } from "./live-preview"
+
+type Surface = "gl" | "2d"
+
+/**
+ * 把实时预览画布（模块级单例）挂到这里。用 display:contents 的宿主，画布本身带上 className/样式，
+ * 在布局里的表现与原来的 <img> 一致（canvas 同样是替换元素，object-fit 生效）。
+ */
+function CanvasSlot({ kind, className, clipPath }: { kind: Surface; className: string; clipPath?: string }) {
+  const mount = useCallback(
+    (host: HTMLSpanElement | null) => {
+      if (!host) return
+      const c = liveCanvas(kind)
+      c.className = className
+      c.style.clipPath = clipPath ?? ""
+      c.setAttribute("aria-label", "处理后（实时预览）")
+      if (c.parentElement !== host) host.replaceChildren(c)
+    },
+    [kind, className, clipPath]
+  )
+  return <span ref={mount} className="contents" />
+}
 
 const REVEAL_ITEMS = [
   { value: "none", label: "不模拟" },
@@ -19,15 +42,17 @@ const REVEAL_ITEMS = [
   ...Object.entries(REVEAL_LABELS).map(([value, label]) => ({ value, label })),
 ]
 
-/** 放大镜：最近邻采样 1:1 像素，伪隐性水印的高频结构只有这样才看得清 */
+/** 放大镜：最近邻采样 1:1 像素，伪隐性水印的高频结构只有这样才看得清。拖动期间改为从实时预览画布取像素 */
 function Loupe({
   src,
   altSrc,
+  live,
   pos,
   zoom,
 }: {
   src: string
   altSrc: string
+  live: Surface | null
   pos: { x: number; y: number; nx: number; ny: number } | null
   zoom: number
 }) {
@@ -55,16 +80,24 @@ function Loupe({
   }, [])
 
   useEffect(() => {
-    const c = canvas.current
-    const img = alt ? imgs.current.b : imgs.current.a
-    if (!c || !pos || !img?.complete) return
-    const ctx = c.getContext("2d")!
-    const S = c.width
-    const span = S / zoom
-    ctx.imageSmoothingEnabled = false
-    ctx.clearRect(0, 0, S, S)
-    ctx.drawImage(img, pos.nx * img.naturalWidth - span / 2, pos.ny * img.naturalHeight - span / 2, span, span, 0, 0, S, S)
-  }, [pos, zoom, alt])
+    const draw = () => {
+      const c = canvas.current
+      if (!c || !pos) return
+      const source: CanvasImageSource | undefined = alt ? imgs.current.b : live ? liveCanvas(live) : imgs.current.a
+      if (!source || (source instanceof HTMLImageElement && !source.complete)) return
+      const sw = source instanceof HTMLImageElement ? source.naturalWidth : (source as HTMLCanvasElement).width
+      const sh = source instanceof HTMLImageElement ? source.naturalHeight : (source as HTMLCanvasElement).height
+      const ctx = c.getContext("2d")!
+      const S = c.width
+      const span = S / zoom
+      ctx.imageSmoothingEnabled = false
+      ctx.clearRect(0, 0, S, S)
+      ctx.drawImage(source, pos.nx * sw - span / 2, pos.ny * sh - span / 2, span, span, 0, 0, S, S)
+    }
+    draw()
+    // 实时预览每画一帧，放大镜跟着重画
+    return live && !alt ? onLiveFrame(draw) : undefined
+  }, [pos, zoom, alt, live])
 
   if (!pos) return null
   return (
@@ -98,8 +131,25 @@ function useFitSize(aspect: number) {
   return [setEl, size] as const
 }
 
-export function Stage({ asset, busy }: { asset: Asset | undefined; busy: boolean }) {
+export function Stage({
+  asset,
+  busy,
+  author,
+  index,
+  support,
+}: {
+  asset: Asset | undefined
+  busy: boolean
+  /** 当前图的署名与序号（模板变量，与 CPU 管线一致） */
+  author: string
+  index: number
+  /** 当前拖动能否由实时预览接管（Studio 计算，同一结论决定是否暂停 CPU） */
+  support: LiveSupport | null
+}) {
   const { compare, setCompare, reveal, setReveal, setAssetTemplate } = useStudio()
+  const interacting = useStudio((s) => s.interacting)
+  const resultBefore = useStudio((s) => s.resultBeforeInteraction)
+  const live = useLive()
   const pinned = useStudio((s) =>
     asset?.templateId && asset.templateId !== s.activeTemplateId ? s.templates.find((t) => t.id === asset.templateId) : undefined
   )
@@ -112,6 +162,7 @@ export function Stage({ asset, busy }: { asset: Asset | undefined; busy: boolean
   const frame = useRef<HTMLDivElement>(null)
   const dragging = useRef(false)
   const [fitRef, fitSize] = useFitSize(asset ? asset.width / asset.height : 1)
+  useLivePreview({ asset, author, index, interacting, support, display: fitSize })
 
   // 盗用模拟：原图与处理后图同时经过同一变换
   useEffect(() => {
@@ -168,6 +219,27 @@ export function Stage({ asset, busy }: { asset: Asset | undefined; busy: boolean
   const processed = revealUrls?.after ?? asset.result?.url ?? asset.url
   const report = asset.result?.report
 
+  // 实时预览画布的显示条件：画的是这张图、属于这一次拖动；
+  // 拖动中画布类型要与拖动类别对应，松手后一直显示到全分辨率新结果替换掉旧结果为止
+  const stale = (asset.result ?? null) === resultBefore
+  const liveSurface: Surface | null =
+    live.mode && live.assetId === asset.id && live.forResult === resultBefore && stale
+      ? interacting
+        ? support?.ok && live.mode === (interacting === "glance" ? "gl" : "2d")
+          ? live.mode
+          : null
+        : live.mode
+      : null
+  const liveUnavailable = interacting && support && !support.ok && support.reason ? support.reason : null
+
+  const processedNode = (className: string, clipPath?: string) =>
+    liveSurface ? (
+      <CanvasSlot kind={liveSurface} className={className} clipPath={clipPath} />
+    ) : (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={processed} alt="处理后" className={className} style={clipPath ? { clipPath } : undefined} draggable={false} />
+    )
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2 sm:px-4">
@@ -211,6 +283,17 @@ export function Stage({ asset, busy }: { asset: Asset | undefined; busy: boolean
           />
         )}
         <div className="ml-auto flex items-center gap-2 text-xs text-foreground-muted">
+          {liveSurface && (
+            <Badge variant="info" size="sm" title="拖动期间的近似预览，松手后替换为全分辨率计算结果">
+              <Zap className="size-3" />
+              {liveSurface === "gl" ? "GPU 实时预览" : "实时预览 · 显示分辨率"}
+            </Badge>
+          )}
+          {liveUnavailable && (
+            <Badge variant="soft" size="sm" title="拖动时改为防抖后 CPU 全分辨率计算">
+              实时预览不可用：{liveUnavailable}
+            </Badge>
+          )}
           {(busy || revealBusy) && <Loader2 className="size-3.5 animate-spin" />}
           {report && (
             <>
@@ -231,15 +314,22 @@ export function Stage({ asset, busy }: { asset: Asset | undefined; busy: boolean
         {compare === "side" ? (
           <div className="absolute inset-0 grid grid-cols-2 place-items-center gap-4">
             {[
-              { src: original, label: revealUrls ? "原图 · 同样处理" : "原图" },
-              { src: processed, label: revealUrls ? "水印图 · 同样处理" : "处理后" },
-            ].map((p) => (
-              <figure key={p.label} className="flex max-h-full min-h-0 flex-col items-center gap-2">
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img src={p.src} alt={p.label} className="checkerboard max-h-[calc(100%-1.5rem)] min-h-0 rounded-lg object-contain shadow-sm" />
-                <figcaption className="text-xs text-foreground-muted">{p.label}</figcaption>
-              </figure>
-            ))}
+              { src: original, label: revealUrls ? "原图 · 同样处理" : "原图", processed: false },
+              { src: processed, label: revealUrls ? "水印图 · 同样处理" : "处理后", processed: true },
+            ].map((p) => {
+              const cls = "checkerboard max-h-[calc(100%-1.5rem)] min-h-0 max-w-full rounded-lg object-contain shadow-sm"
+              return (
+                <figure key={p.label} className="flex max-h-full min-h-0 flex-col items-center gap-2">
+                  {p.processed ? (
+                    processedNode(cls)
+                  ) : (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img src={p.src} alt={p.label} className={cls} />
+                  )}
+                  <figcaption className="text-xs text-foreground-muted">{p.label}</figcaption>
+                </figure>
+              )
+            })}
           </div>
         ) : (
           <div
@@ -250,18 +340,15 @@ export function Stage({ asset, busy }: { asset: Asset | undefined; busy: boolean
             onPointerLeave={() => setPos(null)}
             onPointerUp={() => (dragging.current = false)}
           >
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img src={compare === "result" ? processed : original} alt="原图" className="absolute inset-0 size-full object-contain" draggable={false} />
+            {compare === "result" ? (
+              processedNode("absolute inset-0 size-full object-contain")
+            ) : (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img src={original} alt="原图" className="absolute inset-0 size-full object-contain" draggable={false} />
+            )}
             {compare === "slider" && (
               <>
-                {/* eslint-disable-next-line @next/next/no-img-element */}
-                <img
-                  src={processed}
-                  alt="处理后"
-                  className="absolute inset-0 size-full object-contain"
-                  style={{ clipPath: `inset(0 0 0 ${split}%)` }}
-                  draggable={false}
-                />
+                {processedNode("absolute inset-0 size-full object-contain", `inset(0 0 0 ${split}%)`)}
                 <div
                   className="absolute inset-y-0 z-10 w-8 -translate-x-1/2 cursor-ew-resize"
                   style={{ left: `${split}%` }}
@@ -283,7 +370,7 @@ export function Stage({ asset, busy }: { asset: Asset | undefined; busy: boolean
                 </span>
               </>
             )}
-            {loupe && <Loupe src={processed} altSrc={original} pos={pos} zoom={zoom} />}
+            {loupe && <Loupe src={processed} altSrc={original} live={liveSurface} pos={pos} zoom={zoom} />}
           </div>
         )}
         {pinned && (

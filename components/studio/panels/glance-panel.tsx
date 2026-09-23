@@ -58,18 +58,18 @@ export function GlancePanel() {
         <FieldRow label="文字">
           <Input value={g.text.content} onChange={(e) => patchGlance((x) => ({ ...x, text: { ...x.text, content: e.target.value } }))} />
         </FieldRow>
-        <SliderRow label="字号" value={g.text.fontSize} min={3} max={25} step={0.5} onChange={(fontSize) => patchGlance((x) => ({ ...x, text: { ...x.text, fontSize } }))} format={(v) => `${v}%`} />
-        <SliderRow label="旋转" value={g.layout.rotation} min={-90} max={90} onChange={(rotation) => patchGlance((x) => ({ ...x, layout: { ...x.layout, rotation } }))} format={(v) => `${v}°`} />
-        <SliderRow label="密度" value={g.layout.gapY} min={0.2} max={4} step={0.05} onChange={(gapY) => patchGlance((x) => ({ ...x, layout: { ...x.layout, gapY, gapX: gapY * 0.4 } }))} format={(v) => `${v.toFixed(2)}×`} />
-        <SliderRow label="边缘羽化" value={g.feather} min={0} max={8} step={0.5} onChange={(feather) => set({ feather })} format={(v) => `${v}‰`} />
-        <SliderRow label="纹理自适应" value={g.adaptive} min={0} max={1} step={0.05} onChange={(adaptive) => set({ adaptive })} format={(v) => `${Math.round(v * 100)}%`} />
+        <SliderRow live="glance" label="字号" value={g.text.fontSize} min={3} max={25} step={0.5} onChange={(fontSize) => patchGlance((x) => ({ ...x, text: { ...x.text, fontSize } }))} format={(v) => `${v}%`} />
+        <SliderRow live="glance" label="旋转" value={g.layout.rotation} min={-90} max={90} onChange={(rotation) => patchGlance((x) => ({ ...x, layout: { ...x.layout, rotation } }))} format={(v) => `${v}°`} />
+        <SliderRow live="glance" label="密度" value={g.layout.gapY} min={0.2} max={4} step={0.05} onChange={(gapY) => patchGlance((x) => ({ ...x, layout: { ...x.layout, gapY, gapX: gapY * 0.4 } }))} format={(v) => `${v.toFixed(2)}×`} />
+        <SliderRow live="glance" label="边缘羽化" value={g.feather} min={0} max={8} step={0.5} onChange={(feather) => set({ feather })} format={(v) => `${v}‰`} />
+        <SliderRow live="glance" label="纹理自适应" value={g.adaptive} min={0} max={1} step={0.05} onChange={(adaptive) => set({ adaptive })} format={(v) => `${Math.round(v * 100)}%`} />
       </Section>
 
       <Section title="触发层" description="每层对应一种盗用场景；振幅单位是 8-bit 灰阶">
         <SwitchRow label="相位反转光栅" hint="重采样 / 打印加网 / 锐化 → 显形" checked={g.grating.enabled} onChange={(enabled) => set({ grating: { ...g.grating, enabled } })} />
         {g.grating.enabled && (
           <>
-            <SliderRow label="振幅" value={g.grating.amplitude} min={0.5} max={12} step={0.5} onChange={(amplitude) => set({ grating: { ...g.grating, amplitude } })} />
+            <SliderRow live="glance" label="振幅" value={g.grating.amplitude} min={0.5} max={12} step={0.5} onChange={(amplitude) => set({ grating: { ...g.grating, amplitude } })} />
             <FieldRow label="载波">
               <Segmented
                 size="sm"
@@ -83,8 +83,8 @@ export function GlancePanel() {
             </FieldRow>
             {g.grating.kind === "lines" && (
               <>
-                <SliderRow label="周期" value={g.grating.period} min={2} max={6} step={0.5} onChange={(period) => set({ grating: { ...g.grating, period } })} format={(v) => `${v}px`} />
-                <SliderRow label="角度" value={g.grating.angle} min={0} max={180} onChange={(angle) => set({ grating: { ...g.grating, angle } })} format={(v) => `${v}°`} />
+                <SliderRow live="glance" label="周期" value={g.grating.period} min={2} max={6} step={0.5} onChange={(period) => set({ grating: { ...g.grating, period } })} format={(v) => `${v}px`} />
+                <SliderRow live="glance" label="角度" value={g.grating.angle} min={0} max={180} onChange={(angle) => set({ grating: { ...g.grating, angle } })} format={(v) => `${v}°`} />
               </>
             )}
           </>
@@ -92,21 +92,21 @@ export function GlancePanel() {
         <SwitchRow label="防复印底纹" hint="细网点 vs 粗网点，打印网点扩大 → 显形" checked={g.pantograph.enabled} onChange={(enabled) => set({ pantograph: { ...g.pantograph, enabled } })} />
         {g.pantograph.enabled && (
           <>
-            <SliderRow label="振幅" value={g.pantograph.amplitude} min={0.5} max={12} step={0.5} onChange={(amplitude) => set({ pantograph: { ...g.pantograph, amplitude } })} />
-            <SliderRow label="粗网周期" value={g.pantograph.coarsePeriod} min={3} max={10} onChange={(coarsePeriod) => set({ pantograph: { ...g.pantograph, coarsePeriod } })} format={(v) => `${v}px`} />
+            <SliderRow live="glance" label="振幅" value={g.pantograph.amplitude} min={0.5} max={12} step={0.5} onChange={(amplitude) => set({ pantograph: { ...g.pantograph, amplitude } })} />
+            <SliderRow live="glance" label="粗网周期" value={g.pantograph.coarsePeriod} min={3} max={10} onChange={(coarsePeriod) => set({ pantograph: { ...g.pantograph, coarsePeriod } })} format={(v) => `${v}px`} />
           </>
         )}
         <SwitchRow label="暗部色调偏移" hint="拉对比度 / 提亮阴影 → 显形" checked={g.tone.enabled} onChange={(enabled) => set({ tone: { ...g.tone, enabled } })} />
         {g.tone.enabled && (
           <>
-            <SliderRow label="振幅" value={g.tone.amplitude} min={0.2} max={6} step={0.1} onChange={(amplitude) => set({ tone: { ...g.tone, amplitude } })} />
-            <SliderRow label="暗部偏置" value={g.tone.shadowBias} min={0} max={1} step={0.05} onChange={(shadowBias) => set({ tone: { ...g.tone, shadowBias } })} format={(v) => `${Math.round(v * 100)}%`} />
+            <SliderRow live="glance" label="振幅" value={g.tone.amplitude} min={0.2} max={6} step={0.1} onChange={(amplitude) => set({ tone: { ...g.tone, amplitude } })} />
+            <SliderRow live="glance" label="暗部偏置" value={g.tone.shadowBias} min={0} max={1} step={0.05} onChange={(shadowBias) => set({ tone: { ...g.tone, shadowBias } })} format={(v) => `${Math.round(v * 100)}%`} />
           </>
         )}
         <SwitchRow label="等亮度色度偏移" hint="拉饱和度 / 平均法去色 → 显形" checked={g.chroma.enabled} onChange={(enabled) => set({ chroma: { ...g.chroma, enabled } })} />
         {g.chroma.enabled && (
           <>
-            <SliderRow label="振幅" value={g.chroma.amplitude} min={0.5} max={16} step={0.5} onChange={(amplitude) => set({ chroma: { ...g.chroma, amplitude } })} />
+            <SliderRow live="glance" label="振幅" value={g.chroma.amplitude} min={0.5} max={16} step={0.5} onChange={(amplitude) => set({ chroma: { ...g.chroma, amplitude } })} />
             <FieldRow label="色度轴">
               <Select value={g.chroma.axis} onValueChange={(v) => v && set({ chroma: { ...g.chroma, axis: v as GlanceConfig["chroma"]["axis"] } })} items={AXIS_ITEMS}>
                 <SelectTrigger className="h-8 text-xs">

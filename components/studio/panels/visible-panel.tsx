@@ -120,7 +120,7 @@ function LayerEditor({ layer }: { layer: VisibleLayer }) {
               patch((l) => ({ ...l, image: { src, width: l.image?.width ?? 18 } }))
             }}
           />
-          <SliderRow
+          <SliderRow live="visible"
             label="宽度"
             value={layer.image?.width ?? 18}
             min={3}
@@ -144,11 +144,11 @@ function LayerEditor({ layer }: { layer: VisibleLayer }) {
         {L.mode === "single" ? (
           <>
             <AnchorPicker value={L.anchor} onChange={(anchor) => setLayout({ anchor })} />
-            <SliderRow label="边距" value={L.margin} min={0} max={20} step={0.5} onChange={(margin) => setLayout({ margin })} format={(v) => `${v}%`} />
+            <SliderRow live="visible" label="边距" value={L.margin} min={0} max={20} step={0.5} onChange={(margin) => setLayout({ margin })} format={(v) => `${v}%`} />
           </>
         ) : (
           <>
-            <SliderRow
+            <SliderRow live="visible"
               label="横向间距"
               value={L.gapX}
               min={0}
@@ -159,7 +159,7 @@ function LayerEditor({ layer }: { layer: VisibleLayer }) {
             />
             {L.mode === "tile" && (
               <>
-                <SliderRow
+                <SliderRow live="visible"
                   label="纵向间距"
                   value={L.gapY}
                   min={0}
@@ -168,14 +168,14 @@ function LayerEditor({ layer }: { layer: VisibleLayer }) {
                   onChange={(gapY) => setLayout({ gapY })}
                   format={(v) => `${v.toFixed(2)}×`}
                 />
-                <SliderRow label="隔行错位" value={L.stagger} min={0} max={1} step={0.05} onChange={(stagger) => setLayout({ stagger })} format={(v) => `${Math.round(v * 100)}%`} />
+                <SliderRow live="visible" label="隔行错位" value={L.stagger} min={0} max={1} step={0.05} onChange={(stagger) => setLayout({ stagger })} format={(v) => `${Math.round(v * 100)}%`} />
               </>
             )}
           </>
         )}
-        <SliderRow label="旋转" value={L.rotation} min={-90} max={90} onChange={(rotation) => setLayout({ rotation })} format={(v) => `${v}°`} />
-        <SliderRow label="水平偏移" value={L.offsetX} min={-50} max={50} step={0.5} onChange={(offsetX) => setLayout({ offsetX })} format={(v) => `${v}%`} />
-        <SliderRow label="垂直偏移" value={L.offsetY} min={-50} max={50} step={0.5} onChange={(offsetY) => setLayout({ offsetY })} format={(v) => `${v}%`} />
+        <SliderRow live="visible" label="旋转" value={L.rotation} min={-90} max={90} onChange={(rotation) => setLayout({ rotation })} format={(v) => `${v}°`} />
+        <SliderRow live="visible" label="水平偏移" value={L.offsetX} min={-50} max={50} step={0.5} onChange={(offsetX) => setLayout({ offsetX })} format={(v) => `${v}%`} />
+        <SliderRow live="visible" label="垂直偏移" value={L.offsetY} min={-50} max={50} step={0.5} onChange={(offsetY) => setLayout({ offsetY })} format={(v) => `${v}%`} />
       </Section>
 
       {layer.kind === "text" && (
@@ -216,9 +216,9 @@ function LayerEditor({ layer }: { layer: VisibleLayer }) {
               </Button>
             </div>
           </FieldRow>
-          <SliderRow label="字号" value={t.fontSize} min={0.5} max={25} step={0.1} onChange={(fontSize) => setText({ fontSize })} format={(v) => `${v.toFixed(1)}%`} />
-          <SliderRow label="字间距" value={t.letterSpacing} min={-0.1} max={1} step={0.01} onChange={(letterSpacing) => setText({ letterSpacing })} format={(v) => `${v.toFixed(2)}em`} />
-          <SliderRow label="行高" value={t.lineHeight} min={0.8} max={3} step={0.05} onChange={(lineHeight) => setText({ lineHeight })} format={(v) => v.toFixed(2)} />
+          <SliderRow live="visible" label="字号" value={t.fontSize} min={0.5} max={25} step={0.1} onChange={(fontSize) => setText({ fontSize })} format={(v) => `${v.toFixed(1)}%`} />
+          <SliderRow live="visible" label="字间距" value={t.letterSpacing} min={-0.1} max={1} step={0.01} onChange={(letterSpacing) => setText({ letterSpacing })} format={(v) => `${v.toFixed(2)}em`} />
+          <SliderRow live="visible" label="行高" value={t.lineHeight} min={0.8} max={3} step={0.05} onChange={(lineHeight) => setText({ lineHeight })} format={(v) => v.toFixed(2)} />
           <FieldRow label="对齐">
             <Segmented
               size="sm"
@@ -269,7 +269,7 @@ function LayerEditor({ layer }: { layer: VisibleLayer }) {
                   }
                 />
               ))}
-              <SliderRow
+              <SliderRow live="visible"
                 label="渐变角度"
                 value={t.fill.angle}
                 min={0}
@@ -283,29 +283,29 @@ function LayerEditor({ layer }: { layer: VisibleLayer }) {
           {t.stroke.enabled && (
             <>
               <ColorRow label="描边色" value={t.stroke.color} onChange={(color) => setText({ stroke: { ...t.stroke, color } })} />
-              <SliderRow label="描边宽" value={t.stroke.width} min={0.01} max={0.3} step={0.01} onChange={(width) => setText({ stroke: { ...t.stroke, width } })} format={(v) => `${v.toFixed(2)}em`} />
+              <SliderRow live="visible" label="描边宽" value={t.stroke.width} min={0.01} max={0.3} step={0.01} onChange={(width) => setText({ stroke: { ...t.stroke, width } })} format={(v) => `${v.toFixed(2)}em`} />
             </>
           )}
           <SwitchRow label="投影" checked={t.shadow.enabled} onChange={(enabled) => setText({ shadow: { ...t.shadow, enabled } })} />
           {t.shadow.enabled && (
             <>
               <ColorRow label="投影色" value={t.shadow.color} onChange={(color) => setText({ shadow: { ...t.shadow, color } })} />
-              <SliderRow label="模糊" value={t.shadow.blur} min={0} max={1} step={0.01} onChange={(blur) => setText({ shadow: { ...t.shadow, blur } })} format={(v) => `${v.toFixed(2)}em`} />
-              <SliderRow label="Y 偏移" value={t.shadow.offsetY} min={-0.5} max={0.5} step={0.01} onChange={(offsetY) => setText({ shadow: { ...t.shadow, offsetY } })} format={(v) => `${v.toFixed(2)}em`} />
+              <SliderRow live="visible" label="模糊" value={t.shadow.blur} min={0} max={1} step={0.01} onChange={(blur) => setText({ shadow: { ...t.shadow, blur } })} format={(v) => `${v.toFixed(2)}em`} />
+              <SliderRow live="visible" label="Y 偏移" value={t.shadow.offsetY} min={-0.5} max={0.5} step={0.01} onChange={(offsetY) => setText({ shadow: { ...t.shadow, offsetY } })} format={(v) => `${v.toFixed(2)}em`} />
             </>
           )}
           <SwitchRow label="底板" checked={t.background.enabled} onChange={(enabled) => setText({ background: { ...t.background, enabled } })} />
           {t.background.enabled && (
             <>
               <ColorRow label="底板色" value={t.background.color} onChange={(color) => setText({ background: { ...t.background, color } })} />
-              <SliderRow label="圆角" value={t.background.radius} min={0} max={2} step={0.05} onChange={(radius) => setText({ background: { ...t.background, radius } })} format={(v) => `${v.toFixed(2)}em`} />
+              <SliderRow live="visible" label="圆角" value={t.background.radius} min={0} max={2} step={0.05} onChange={(radius) => setText({ background: { ...t.background, radius } })} format={(v) => `${v.toFixed(2)}em`} />
             </>
           )}
         </Section>
       )}
 
       <Section title="合成">
-        <SliderRow label="不透明度" value={layer.opacity} min={0} max={1} step={0.01} onChange={(opacity) => patch((l) => ({ ...l, opacity }))} format={(v) => `${Math.round(v * 100)}%`} />
+        <SliderRow live="visible" label="不透明度" value={layer.opacity} min={0} max={1} step={0.01} onChange={(opacity) => patch((l) => ({ ...l, opacity }))} format={(v) => `${Math.round(v * 100)}%`} />
         <FieldRow label="混合模式">
           <Select value={layer.blend} onValueChange={(v) => v && patch((l) => ({ ...l, blend: v as BlendMode }))} items={BLENDS}>
             <SelectTrigger className="h-8 text-xs">

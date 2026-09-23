@@ -98,14 +98,19 @@ function dither(x: number, y: number) {
   return ((h ^ (h >>> 16)) & 0xffff) / 65536 - 0.5
 }
 
+/** 羽化半径（像素）= 短边 × feather‰ */
+export function featherRadius(cfg: GlanceConfig, width: number, height: number) {
+  return (cfg.feather / 1000) * Math.min(width, height)
+}
+
 /**
+ * 预计算：羽化掩膜、JND 图、色度轴。CPU 导出与 WebGL 预览共用（预览在 Worker 里分项缓存，
+ * 调用的也是 boxBlur / activityMap / resolveChromaAxis 这三个函数）。
  * @param mask 信息掩膜（0–1，已与图像同尺寸），通常来自 renderTextMask
  */
-/** 预计算：羽化掩膜、JND 图、色度轴。CPU 导出与 WebGL 预览共用 */
 export function prepareGlanceMaps(img: RGBAImage, mask: Plane, cfg: GlanceConfig) {
-  const short = Math.min(img.width, img.height)
   return {
-    soft: boxBlur(mask, (cfg.feather / 1000) * short),
+    soft: boxBlur(mask, featherRadius(cfg, img.width, img.height)),
     act: activityMap(img, cfg.adaptive),
     axis: resolveChromaAxis(img, cfg.chroma.axis),
   }

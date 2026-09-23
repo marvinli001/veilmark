@@ -1,5 +1,6 @@
 import * as Comlink from "comlink"
 
+import { collectDocumentFonts } from "./fonts"
 import type { WatermarkWorkerApi } from "./watermark.worker"
 
 /** 单例预览 Worker + 批处理 Worker 池 */
@@ -8,13 +9,23 @@ type Remote = Comlink.Remote<WatermarkWorkerApi>
 
 function spawn(): { remote: Remote; worker: Worker } {
   const worker = new Worker(new URL("./watermark.worker.ts", import.meta.url), { type: "module" })
-  return { remote: Comlink.wrap<WatermarkWorkerApi>(worker), worker }
+  const remote = Comlink.wrap<WatermarkWorkerApi>(worker)
+  // Worker 看不到页面的 @font-face 字体，先注册；Worker 内部会等它完成再画字
+  remote.registerFonts(collectDocumentFonts()).catch(() => {})
+  return { remote, worker }
 }
 
 let preview: Remote | null = null
 export function previewWorker(): Remote {
   preview ??= spawn().remote
   return preview
+}
+
+/** 实时预览专用 Worker：与预览 Worker 分开，拖动时准备底图不会排在一次 1 s 的全分辨率处理后面 */
+let live: Remote | null = null
+export function liveWorker(): Remote {
+  live ??= spawn().remote
+  return live
 }
 
 /**

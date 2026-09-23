@@ -5,6 +5,7 @@ import { create } from "zustand"
 import { createJSONStorage, persist, type StateStorage } from "zustand/middleware"
 
 import type { RevealKind } from "./watermark/glance/simulate"
+import type { LiveKind } from "./watermark/live"
 import { glancePreset, type GlanceConfig } from "./watermark/glance/types"
 import { defaultJob, type PipelineReport, type WatermarkJob } from "./watermark/pipeline"
 import {
@@ -46,6 +47,14 @@ interface StudioState {
   reveal: RevealKind | "diff" | "none"
   trustmarkReady: boolean
 
+  /** 正在拖动的滑杆类别（伪隐性 / 显性）；拖动期间由实时预览接管画布 */
+  interacting: LiveKind | null
+  /**
+   * 开始拖动那一刻当前图的处理结果。松手后画布继续显示实时预览，
+   * 直到结果对象被新的全分辨率结果替换，避免中间闪回旧图。
+   */
+  resultBeforeInteraction: Asset["result"] | null
+
   /** 内置 + 用户模板（用户模板的事实来源是 IndexedDB，这里是内存镜像） */
   templates: Template[]
   templatesLoaded: boolean
@@ -71,6 +80,7 @@ interface StudioState {
   setCompare(m: CompareMode): void
   setReveal(r: StudioState["reveal"]): void
   setTrustmarkReady(v: boolean): void
+  setInteracting(kind: LiveKind | null): void
 
   loadTemplates(): Promise<void>
   applyTemplate(id: string): void
@@ -112,8 +122,15 @@ export function jobForAsset(
   if (!asset?.templateId || asset.templateId === s.activeTemplateId) return s.job
   const t = s.templates.find((x) => x.id === asset.templateId)
   if (!t) return s.job
-  return t.job.author ? t.job : { ...t.job, author: s.job.author }
+  if (t.job.author) return t.job
+  // 补署名会产生新对象；按 (模板参数, 署名) 缓存，保证输入不变时返回同一引用，下游 effect 不会反复触发
+  let byAuthor = withAuthorCache.get(t.job)
+  if (!byAuthor) withAuthorCache.set(t.job, (byAuthor = new Map()))
+  let j = byAuthor.get(s.job.author)
+  if (!j) byAuthor.set(s.job.author, (j = { ...t.job, author: s.job.author }))
+  return j
 }
+const withAuthorCache = new WeakMap<WatermarkJob, Map<string, WatermarkJob>>()
 
 // ---------------------------------------------------------------------------
 // 持久化：工作参数存 IndexedDB（图片水印的 dataURL 会撑爆 localStorage）
@@ -204,6 +221,8 @@ export const useStudio = create<StudioState>()(
         compare: "slider",
         reveal: "none",
         trustmarkReady: false,
+        interacting: null,
+        resultBeforeInteraction: null,
 
         templates: builtinTemplates(),
         templatesLoaded: false,
@@ -270,6 +289,14 @@ export const useStudio = create<StudioState>()(
         setCompare: (compare) => set({ compare }),
         setReveal: (reveal) => set({ reveal }),
         setTrustmarkReady: (trustmarkReady) => set({ trustmarkReady }),
+        setInteracting: (kind) =>
+          set((s) => {
+            if (kind === s.interacting) return {}
+            if (!kind) return { interacting: null }
+            // 上一次松手后新结果还没回来就再次拖动时，current 仍是那份旧结果，逻辑自然成立
+            const current = s.assets.find((a) => a.id === s.activeId)?.result ?? null
+            return { interacting: kind, resultBeforeInteraction: current }
+          }),
 
         async loadTemplates() {
           const [user, defaultTemplateId] = await Promise.all([templateDb.list(), templateDb.getDefaultId()])
