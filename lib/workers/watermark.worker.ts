@@ -26,6 +26,22 @@ async function ensureTrustMark(baseUrl: string, withEncoder: boolean) {
   trustmark = { ort, sessions }
 }
 
+/**
+ * 图片水印位图按 src（dataURL）缓存在 Worker 里。模板切换、刷新页面、批处理池里的新 Worker
+ * 都可能拿到一个还没注册过的 src，这里按需解码，调用方不必事先逐个 registerImageAsset。
+ */
+async function ensureImageAssets(job: WatermarkJob) {
+  for (const l of job.visible) {
+    const src = l.kind === "image" ? l.image?.src : undefined
+    if (!src || imageAssets.has(src)) continue
+    try {
+      imageAssets.set(src, await createImageBitmap(await (await fetch(src)).blob()))
+    } catch {
+      // 失效的图片来源（例如被撤销的 blob URL）只影响这一个图层，渲染时会被跳过
+    }
+  }
+}
+
 export interface ProcessResult {
   blob: Blob
   width: number
@@ -44,6 +60,7 @@ const api = {
   },
 
   async process(file: Blob, job: WatermarkJob, tpl: TemplateContext): Promise<ProcessResult> {
+    await ensureImageAssets(job)
     const bitmap = await decodeImage(file)
     try {
       const { image, report } = await runPipeline(bitmap, job, tpl, {

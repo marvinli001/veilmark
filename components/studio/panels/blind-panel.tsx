@@ -27,6 +27,7 @@ const ROBUSTNESS = [
 
 export function BlindPanel() {
   const { job, setJob, trustmarkReady, setTrustmarkReady } = useStudio()
+  const keyStripped = useStudio((s) => !!s.templates.find((t) => t.id === s.activeTemplateId)?.privateKeyStripped)
   const b = job.blind
   const set = (p: Partial<BlindConfig>) => setJob((j) => ({ ...j, blind: { ...j.blind, ...p } }))
   const [loading, setLoading] = useState(false)
@@ -148,6 +149,11 @@ export function BlindPanel() {
           <FieldRow label="私钥">
             <Input type="password" placeholder="只有持有者能检出" value={b.key} onChange={(e) => set({ key: e.target.value })} />
           </FieldRow>
+        )}
+        {customKey && !b.key && (
+          <Callout tone="warning">
+            {keyStripped ? "该模板导出时已去除私钥，" : ""}尚未填写私钥：在填写之前按公开密钥嵌入，任何人都能检出。
+          </Callout>
         )}
         <SliderRow label="CDP 强度" value={b.strength} min={3} max={9} step={0.5} onChange={(strength) => set({ strength })} />
         <Callout>

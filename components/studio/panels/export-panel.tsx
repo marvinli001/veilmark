@@ -8,7 +8,7 @@ import { Download, FolderDown, Loader2 } from "lucide-react"
 import { useState } from "react"
 
 import { TRUSTMARK_BASE } from "@/lib/config"
-import { useStudio, type Asset } from "@/lib/store"
+import { jobForAsset, useStudio, type Asset } from "@/lib/store"
 import { EXT } from "@/lib/watermark/codec"
 import { lossyExportWarnings, type ExportConfig, type WatermarkJob } from "@/lib/watermark/pipeline"
 import { registry, sha256Hex } from "@/lib/watermark/registry"
@@ -46,7 +46,7 @@ async function record(job: WatermarkJob, asset: Asset, r: ProcessResult) {
 }
 
 export function ExportPanel({ activeAsset }: { activeAsset?: Asset }) {
-  const { job, setJob, assets, trustmarkReady } = useStudio()
+  const { job, setJob, assets, trustmarkReady, templates, activeTemplateId } = useStudio()
   const e = job.export
   const set = (p: Partial<ExportConfig>) => setJob((j) => ({ ...j, export: { ...j.export, ...p } }))
   const [progress, setProgress] = useState<{ done: number; total: number } | null>(null)
@@ -55,29 +55,35 @@ export function ExportPanel({ activeAsset }: { activeAsset?: Asset }) {
   const warnings = lossyExportWarnings(job)
   const selected = assets.filter((a) => a.selected)
 
-  const effectiveJob = (): WatermarkJob =>
-    job.blind.engine !== "cdp" && !trustmarkReady ? { ...job, blind: { ...job.blind, engine: "cdp" } } : job
+  /** 每张图用它自己的模板（未指定则跟随当前参数）；TrustMark 未加载时降级为 CDP，与预览一致 */
+  const effectiveJob = (asset: Asset): WatermarkJob => {
+    const j = jobForAsset({ job, templates, activeTemplateId }, asset)
+    return j.blind.engine !== "cdp" && !trustmarkReady ? { ...j, blind: { ...j.blind, engine: "cdp" } } : j
+  }
 
   async function exportCurrent() {
     if (!activeAsset?.result) return
+    const j = effectiveJob(activeAsset)
     const index = assets.findIndex((a) => a.id === activeAsset.id)
-    saveBlob(activeAsset.result.blob, outputName(job, activeAsset, index))
-    if (autoRecord) await record(job, activeAsset, activeAsset.result)
+    saveBlob(activeAsset.result.blob, outputName(j, activeAsset, index))
+    if (autoRecord) await record(j, activeAsset, activeAsset.result)
   }
 
   async function exportBatch() {
-    const j = effectiveJob()
+    const jobs = new Map(selected.map((a) => [a.id, effectiveJob(a)]))
     setFailures([])
     setProgress({ done: 0, total: selected.length })
-    const imageLayers = j.visible.filter((l) => l.kind === "image" && l.image?.src)
+    const needsTrustMark = [...jobs.values()].some((j) => j.blind.enabled && j.blind.engine !== "cdp")
     const results = await runPool(
       selected,
-      (w, asset) => w.process(asset.file, j, { author: j.author, filename: asset.name, index: assets.indexOf(asset), date: new Date() }),
+      (w, asset) => {
+        const j = jobs.get(asset.id)!
+        return w.process(asset.file, j, { author: j.author, filename: asset.name, index: assets.indexOf(asset), date: new Date() })
+      },
       (done, total) => setProgress({ done, total }),
       async (w) => {
-        // 每个池内 Worker 都需要各自的图片水印位图与模型
-        for (const l of imageLayers) await w.registerImageAsset(l.image!.src, await (await fetch(l.image!.src)).blob())
-        if (j.blind.engine !== "cdp") await w.loadTrustMark(new URL(TRUSTMARK_BASE, location.href).href)
+        // 图片水印位图由 Worker 按需解码；模型需要每个池内 Worker 各自加载
+        if (needsTrustMark) await w.loadTrustMark(new URL(TRUSTMARK_BASE, location.href).href)
       }
     )
     const files: Array<{ name: string; input: Blob }> = []
@@ -89,6 +95,7 @@ export function ExportPanel({ activeAsset }: { activeAsset?: Asset }) {
         errs.push(`${asset.name}：${r.error}`)
         continue
       }
+      const j = jobs.get(asset.id)!
       files.push({ name: outputName(j, asset, assets.indexOf(asset)), input: r.value.blob })
       if (autoRecord) await record(j, asset, r.value)
     }

@@ -1,12 +1,77 @@
 "use client"
 
 import { Checkbox } from "@appica/ui-react/checkbox"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuGroupLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@appica/ui-react/dropdown-menu"
 import { ScrollArea } from "@appica/ui-react/scroll-area"
-import { ImagePlus, Loader2, Trash2, TriangleAlert } from "lucide-react"
+import { ChevronDown, ImagePlus, Loader2, Trash2, TriangleAlert } from "lucide-react"
 import { useRef } from "react"
 
-import { useStudio } from "@/lib/store"
+import { useStudio, type Asset } from "@/lib/store"
 import { cn } from "@/lib/utils"
+
+const FOLLOW = "__follow__"
+
+/** 按图指定模板：批量导出时每张图用自己的模板；默认跟随当前正在编辑的参数 */
+function AssetTemplatePicker({ asset }: { asset: Asset }) {
+  const templates = useStudio((s) => s.templates)
+  const setAssetTemplate = useStudio((s) => s.setAssetTemplate)
+  const pinned = templates.find((t) => t.id === asset.templateId)
+  return (
+    <DropdownMenu size="sm">
+      <DropdownMenuTrigger
+        onClick={(e) => e.stopPropagation()}
+        className={cn(
+          "flex max-w-full items-center gap-0.5 rounded px-1 -mx-1 text-[11px] outline-ring-primary hover:bg-background-muted",
+          pinned ? "text-foreground-strong" : "text-foreground-subtle"
+        )}
+        aria-label={`${asset.name} 使用的模板`}
+      >
+        <span className="truncate">{pinned ? pinned.name : "跟随当前"}</span>
+        <ChevronDown className="size-3 shrink-0" />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent className="w-52">
+        <DropdownMenuRadioGroup
+          value={asset.templateId ?? FOLLOW}
+          onValueChange={(v) => setAssetTemplate(asset.id, v === FOLLOW ? undefined : String(v))}
+        >
+          <DropdownMenuRadioItem value={FOLLOW} closeOnClick>跟随当前参数</DropdownMenuRadioItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuGroup>
+            <DropdownMenuGroupLabel>起步模板</DropdownMenuGroupLabel>
+            {templates
+              .filter((t) => t.builtin)
+              .map((t) => (
+                <DropdownMenuRadioItem key={t.id} value={t.id} closeOnClick>
+                  {t.name}
+                </DropdownMenuRadioItem>
+              ))}
+          </DropdownMenuGroup>
+          {templates.some((t) => !t.builtin) && (
+            <DropdownMenuGroup>
+              <DropdownMenuGroupLabel>我的模板</DropdownMenuGroupLabel>
+              {templates
+                .filter((t) => !t.builtin)
+                .map((t) => (
+                  <DropdownMenuRadioItem key={t.id} value={t.id} closeOnClick>
+                    <span className="truncate">{t.name}</span>
+                  </DropdownMenuRadioItem>
+                ))}
+            </DropdownMenuGroup>
+          )}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
+}
 
 export function AssetRail() {
   const { assets, activeId, addFiles, setActive, toggleSelected, removeAsset, selectAll } = useStudio()
@@ -83,6 +148,7 @@ export function AssetRail() {
                     {a.status === "error" && <TriangleAlert className="size-3 text-error-emphasis" />}
                     {a.width}×{a.height}
                   </p>
+                  <AssetTemplatePicker asset={a} />
                 </div>
                 <button
                   aria-label="移除"

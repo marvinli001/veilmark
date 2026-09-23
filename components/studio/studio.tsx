@@ -3,10 +3,11 @@
 import { Input } from "@appica/ui-react/input"
 import { ScrollArea } from "@appica/ui-react/scroll-area"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@appica/ui-react/tabs"
-import { useEffect, useRef, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 
 import { AppHeader } from "@/components/app-header"
-import { useStudio } from "@/lib/store"
+import { TemplateSwitcher } from "@/components/templates/template-switcher"
+import { jobForAsset, useStudio } from "@/lib/store"
 import { cn } from "@/lib/utils"
 import type { WatermarkJob } from "@/lib/watermark/pipeline"
 import { previewWorker } from "@/lib/workers/client"
@@ -24,8 +25,15 @@ function Dot({ on }: { on: boolean }) {
 }
 
 export function Studio() {
-  const { assets, activeId, job, addFiles, patchAsset, setJob, trustmarkReady } = useStudio()
+  const { assets, activeId, job, addFiles, patchAsset, setJob, trustmarkReady, templates, activeTemplateId } = useStudio()
   const active = assets.find((a) => a.id === activeId)
+  // 预览用“这张图实际会用的参数”：指定了其他模板的图显示该模板的效果
+  // 注意 jobForAsset 可能返回新对象（补署名），必须 memo，否则每次渲染都会触发重算
+  const pinnedId = active?.templateId
+  const assetJob = useMemo(
+    () => jobForAsset({ job, templates, activeTemplateId }, { templateId: pinnedId }),
+    [job, templates, activeTemplateId, pinnedId]
+  )
   const [busy, setBusy] = useState(false)
   const [dragOver, setDragOver] = useState(false)
   const seq = useRef(0)
@@ -45,14 +53,14 @@ export function Studio() {
     if (!active) return
     const id = ++seq.current
     const effective: WatermarkJob =
-      job.blind.engine !== "cdp" && !trustmarkReady ? { ...job, blind: { ...job.blind, engine: "cdp" } } : job
+      assetJob.blind.engine !== "cdp" && !trustmarkReady ? { ...assetJob, blind: { ...assetJob.blind, engine: "cdp" } } : assetJob
     const timer = setTimeout(async () => {
       setBusy(true)
       patchAsset(active.id, { status: "processing" })
       try {
         const index = useStudio.getState().assets.findIndex((a) => a.id === active.id)
         const r = await previewWorker().process(active.file, effective, {
-          author: job.author,
+          author: effective.author,
           filename: active.name,
           index,
           date: new Date(),
@@ -70,7 +78,7 @@ export function Studio() {
     return () => clearTimeout(timer)
     // 只在图片或配置变化时重跑；patchAsset 引用稳定
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active?.id, job, trustmarkReady])
+  }, [active?.id, assetJob, trustmarkReady])
 
   return (
     <div
@@ -87,6 +95,7 @@ export function Studio() {
       }}
     >
       <AppHeader>
+        <TemplateSwitcher />
         <Input
           inputSize="sm"
           className="hidden w-48 sm:flex"

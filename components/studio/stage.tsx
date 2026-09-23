@@ -99,7 +99,10 @@ function useFitSize(aspect: number) {
 }
 
 export function Stage({ asset, busy }: { asset: Asset | undefined; busy: boolean }) {
-  const { compare, setCompare, reveal, setReveal } = useStudio()
+  const { compare, setCompare, reveal, setReveal, setAssetTemplate } = useStudio()
+  const pinned = useStudio((s) =>
+    asset?.templateId && asset.templateId !== s.activeTemplateId ? s.templates.find((t) => t.id === asset.templateId) : undefined
+  )
   const [split, setSplit] = useState(50)
   const [loupe, setLoupe] = useState(false)
   const [zoom, setZoom] = useState(4)
@@ -281,6 +284,19 @@ export function Stage({ asset, busy }: { asset: Asset | undefined; busy: boolean
               </>
             )}
             {loupe && <Loupe src={processed} altSrc={original} pos={pos} zoom={zoom} />}
+          </div>
+        )}
+        {pinned && (
+          <div className="absolute top-0 left-1/2 z-10 flex max-w-[calc(100%-1rem)] -translate-x-1/2 items-center gap-2 rounded-full bg-background/90 py-1 pr-1 pl-3 text-xs text-foreground-strong shadow-sm backdrop-blur-sm">
+            <span className="truncate">
+              此图使用模板「{pinned.name}」，右侧面板的修改不影响它
+            </span>
+            <button
+              className="shrink-0 rounded-full bg-background-muted px-2 py-0.5 text-foreground-intense hover:bg-background-strong"
+              onClick={() => setAssetTemplate(asset.id, undefined)}
+            >
+              改为跟随当前
+            </button>
           </div>
         )}
         {asset.status === "error" && (
