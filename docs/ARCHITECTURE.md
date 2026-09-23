@@ -2,7 +2,7 @@
 
 > 轻量级图片版权保护工具：显性水印、智能伪隐性水印、算法盲水印三合一，可多选叠加、可批量处理，全部在浏览器本地完成，部署在 Vercel 上是纯静态站点。
 >
-> 文中所有数字都来自本仓库的基准脚本（`npm run bench:blind`、`npm run bench:glance`）和单元测试，测试素材是 2400px 的实拍照片加一张合成图。
+> 文中所有数字都来自本仓库的基准脚本（`npm run bench:blind`、`npm run bench:glance`）、单元测试和浏览器验收脚本（`window.__veilmarkLive`），测试素材是 2400px 的实拍照片加一张合成图。
 
 ---
 
@@ -14,6 +14,9 @@
 | 伪隐性水印 | **四层复合**：相位反转光栅 + 防复印底纹 + 暗部色调 + 等亮度色度，叠加 JND 纹理自适应 | 单一原理只能覆盖一种盗用场景。实测高频层适屏下两区亮度差 ΔY≈1.6 级，最近邻缩放后升到约 12 级（7 倍） |
 | 盲水印 | **双引擎**：自研 CDP（经典频域，0 KB）+ Adobe TrustMark（MIT，ONNX，懒加载） | CDP 抗压缩、缩放、截图和调色，但不抗裁剪；TrustMark 补上抗裁剪。两者可叠加且互不干扰（已实测） |
 | 载荷 | 56 bit 紧凑指纹 + CRC-16，完整信息存本地注册表（IndexedDB） | 盲水印容量只有约 100 bit，完整信息必须走“指纹 + 登记”模式 |
+| 举证 | Ed25519 签名的版权证书（RFC 8785 JCS），可内嵌 PNG iTXt，网页与命令行都能离线核验 | 指纹本身可伪造；证书把“指纹 ↔ 公钥 ↔ 文件哈希”绑在一起，并能指出被改动的字段 |
+| 实时预览 | 拖滑杆时 WebGL2 只改 uniform（2400×1600 单帧 1.6 ms），底图/掩膜在专用 Worker 分项缓存；松手后 CPU 全分辨率替换 | 全分辨率 CPU 一次 0.3–1.5 s 跟不上手；与 CPU 逐像素平均差 0.31 级、99 分位 1 级 |
+| 模板 | IndexedDB 多模板 + 4 个只读起步模板，`migrateJob` 深合并补齐，确定性 JSON 导入导出（默认去除私钥） | 图片水印的 dataURL 会撑爆 localStorage；导入别人的旧模板不能崩 |
 | 运行时 | Next.js 16 App Router 静态页 + Web Worker 池（Comlink）+ OffscreenCanvas | 图片不出浏览器，不需要服务器，主线程不卡 |
 | UI | appica-ui（主设计系统，Base UI）+ shadcn/ui（Luma 风格，Base UI 底座） | 两者都基于 Base UI，token 已桥接 |
 
@@ -32,11 +35,17 @@
 | 盗用模拟器 | 对比度、提亮阴影、平均法去色、饱和度 ×3、最近邻 50%、非整数缩放 37%、USM 锐化、打印（网点扩大）、差异 ×12 | ✅ |
 | 盲水印 | CDP / TrustMark / 双引擎；载荷包含创作者 ID、日期、作品序号（原图哈希 / 批次序号 / 手动）；公开密钥或私有密钥 | ✅ |
 | 对比视图 | 滑动对比 / 并排 / 仅结果；放大镜 2/4/8×，最近邻采样，按住 ⌥ 切到原图 | ✅ |
+| 拖动实时预览 | 伪隐性滑杆走 WebGL2（原图分辨率），显性图层滑杆走主线程 Canvas 2D（显示分辨率）；拖动时暂停 CPU，松手后全分辨率替换；不支持 WebGL2 / 超纹理上限时回退并提示 | ✅ |
 | 导出 | PNG、无损 WebP（libwebp WASM）、有损 WebP/JPEG；文件名模板；用高频层时导出有损格式会提示 | ✅ |
 | 批量 | 已选图片进 Worker 池并发处理，带进度，打包 ZIP（流式 client-zip），单张失败不影响其它 | ✅ |
 | 验证 | 上传或粘贴疑似盗图 → 依次试所有密钥的 CDP 和 TrustMark → 查注册表 | ✅ |
-| 注册表 | 导出时自动登记指纹、创作者、原图 SHA-256；可导入/导出 JSON | ✅ |
-| 模板管理 | 配置持久化到 localStorage | ✅（多模板管理见路线图） |
+| 注册表 | 导出时自动登记指纹、创作者、原图 SHA-256 与签名证书；可导入/导出 JSON | ✅ |
+| 模板管理 | 多模板（IndexedDB）：新建 / 另存为 / 重命名 / 复制 / 删除 / 设为默认 / 导入 / 导出；4 个只读起步模板；未保存修改提示与切换确认 | ✅ |
+| 按图指定模板 | 素材栏逐张指定模板，预览与批量导出都按图使用各自的模板 | ✅ |
+| 签名身份 | Ed25519（WebCrypto 不可导出密钥，回退 @noble/ed25519）；口令加密备份/恢复；可用公钥派生创作者 ID | ✅ |
+| 版权证书 | `veilmark.certificate/v1`，JCS 规范化后签名；单张可附 `.cert.json`、PNG 可内嵌 iTXt；批量 ZIP 每张附证书 | ✅ |
+| 证书核验 | 网页：签名 / 公钥信任 / 指纹 / 同一文件 / 原图五项清单，篡改时点名字段；命令行 `npm run verify:cert` 输出同一清单 | ✅ |
+| WebP 内嵌证书（XMP） | — | 路线图 |
 
 ---
 
@@ -170,7 +179,7 @@ QIM 量化的是块能量（最大奇异值）的**绝对值**。亮度偏移、
 | serial | 14 | 原图 SHA-256 截断 / 批次序号 / 手动 |
 | CRC-16 | 16 | 另加，不计入 56 bit |
 
-指纹不是签名：知道算法的人可以伪造一个指纹。**举证链**是“图里的指纹 → 注册表记录 → 你手上原图的 SHA-256 → 登记时间”。路线图里计划用 Ed25519 给注册表记录签名，并接入 C2PA Content Credentials（TrustMark 本身就是 C2PA soft-binding 的参考实现）。
+指纹不是签名：知道算法的人可以伪造一个指纹。**举证链**是“图里的指纹 → 签名证书（公钥、原图与导出文件的 SHA-256、签发时间）→ 你手上的原图”，证书由创作者的 Ed25519 密钥签名，任何人都能离线核验（见第 6 节）。C2PA Content Credentials 仍在路线图里（TrustMark 本身就是 C2PA soft-binding 的参考实现）。
 
 ### 3.7 已知局限
 
@@ -180,7 +189,131 @@ QIM 量化的是块能量（最大奇异值）的**绝对值**。亮度偏移、
 
 ---
 
-## 4. 系统架构
+## 4. 拖动滑杆时的实时预览
+
+### 4.1 为什么需要
+
+伪隐性水印是逐像素结构，不能用缩略图代理预览；而全分辨率 CPU 管线（显性 → 伪隐性 → 盲水印闭环 → 编码）一次要 0.3–1.5 s。以前的做法是参数一变就防抖 280 ms 再整张重算，拖滑杆时画面总是慢半拍。
+
+### 4.2 设计
+
+```
+SliderRow pointerdown ──► store.interacting = "glance" | "visible"
+        │                          │
+        │                          ├─ Studio：liveSupport() 判定可接管 → 暂停 CPU 管线，作废在途结果
+        │                          └─ Stage：useLivePreview 接管“处理后”画面
+        ▼
+  ┌───────────── 伪隐性滑杆（WebGL2，原图分辨率）─────────────┐   ┌──── 显性滑杆（主线程 Canvas 2D，显示分辨率）────┐
+  │ 只影响 uniform：各层振幅、光栅类型/周期/角度、               │   │ 原图 + composeVisible()（与导出同一函数）      │
+  │   底纹周期、暗部偏置、色度轴 → 每帧直接 render()            │   │ 尺寸按短边比例，显示分辨率下比例与导出一致      │
+  │ 影响底图/掩膜：文字、字号、旋转、密度、羽化、纹理自适应、   │   └────────────────────────────────────────────────┘
+  │   显性图层 → live Worker.prepareLive()                    │
+  │   返回 底图 ImageBitmap + R8 掩膜 + R8 JND 图（transferable）│
+  │   按“底图 / 掩膜 / 羽化 / 自适应”四个键分项缓存，一次一个请求 │
+  └──────────────────────────────────────────────────────────┘
+pointerup / onValueCommitted ──► interacting = null ──► 按原逻辑防抖后 CPU 全分辨率计算 ──► 结果替换画布
+```
+
+- **专用 live Worker**：与预览 Worker 分开，准备底图不会排在一次 1 s 的全分辨率处理后面。
+- **画布是模块级单例**：Stage 用“插槽”把同一个 canvas 节点挂到需要的位置（滑动对比的裁切层、并排的右侧、仅结果），切换对比模式不会丢 WebGL 上下文；canvas 用原图分辨率、CSS 缩放显示，放大镜改为直接从 canvas 取像素，并订阅帧通知重画。
+- **松手后的衔接**：画布一直显示到新的全分辨率结果对象替换掉“拖动开始时的旧结果”为止，中间不会闪回旧图。
+- **回退**：不支持 WebGL2、图片超过 `MAX_TEXTURE_SIZE`、超过 5000 万像素（live Worker 需常驻约 20 B/像素）时，维持原来的“防抖 + CPU”，工具栏给出“实时预览不可用：原因”的提示；盗用模拟开启或当前图指定了别的模板时也不接管。
+- **页面隐藏时**（窗口被遮挡、切到后台）rAF 会停摆，调度自动改用定时器，保证最后一帧与状态照常落地。
+
+### 4.3 与 CPU 的一致性（验收：平均绝对差 ≤ 1 级、99 分位 ≤ 2 级）
+
+`glance/cpu.ts` 与 `glance/shader.ts` 逐项对应。为了让 GPU 与 CPU 数学上完全等价，shader 做了两处修正：三角函数先用 `fract` 做区间规约（上千弧度的参数在部分 GPU 上精度不足），`pow(1 − Y/255, 2)` 改为乘法（`pow(0, 2)` 在部分驱动上未定义）。
+
+浏览器实测（`window.__veilmarkLive.parity()`，开发模式可用；2400×1600 实拍峡湾图，RGB 三通道逐像素比较 GPU `readPixels` 与 CPU `applyGlance`，CPU 端使用 Worker 里的浮点掩膜/JND 图，即导出路径的输入）：
+
+| 参数 | 平均绝对差 | 99 分位 | 最大 | ≥3 级的像素 |
+| --- | --- | --- | --- | --- |
+| 打印显形（四层全开） | 0.31 | 1 | 2 | 0 |
+| 日常隐藏 | 0.34 | 1 | 2 | 0 |
+| 抗截图（斜线光栅 45°） | 0.31 | 1 | 2 | 0 |
+| 四层振幅拉满 + 红–绿轴 | 0.30 | 1 | 2 | 0 |
+
+差异来自两端不同的抖动哈希（允许 ±1）和 R8 量化；GPU 读回的底图与 Worker 底图逐字节一致。
+
+**顺带修复的一个导出 bug**：验收时发现主线程与 Worker 光栅化的同一掩膜有 10.7% 的像素不同。原因是 Worker 里的 OffscreenCanvas 看不到页面通过 `@font-face` 加载的网络字体（next/font 自托管的 Inter），同一个字体栈在主线程命中 Inter、在 Worker 里退到苹方（同一行字宽 336 px vs 320 px）——也就是说以前导出图里的水印字一直不是界面上选的字体。现在 `lib/workers/fonts.ts` 在创建每个 Worker 后把页面的 `@font-face` 注册进去，Worker 画字前等待加载完成；修复后两端掩膜 0 像素差异。
+
+### 4.4 性能（2400×1600，Apple Silicon，Chrome）
+
+| 项目 | 耗时 |
+| --- | --- |
+| 单帧 `render()` + `readPixels(1px)` 强制等待 GPU（`bench()`，180 帧） | 中位 1.6 ms，p95 2.5 ms，最大 4.8 ms |
+| 真实拖动振幅滑杆时的单帧（每帧同步 GPU） | 中位 1.9 ms，p95 3.8 ms，最大 6.1 ms |
+| 拖“字号”时 Worker 重算掩膜（含传输与纹理上传） | 中位 75 ms（首次含底图 281 ms） |
+| 拖“旋转 / 羽化 / 纹理自适应” | 中位 60 / 46 / 29 ms |
+| 对照：全分辨率 CPU 管线（打印显形 + CDP） | 约 0.5 s + 编码 |
+
+掩膜重算期间 uniform 照常按当前值渲染，所以振幅等参数始终跟手；掩膜类参数每秒追上十几到三十次。另测得开发构建下一次滑杆变动触发的 React 状态更新中位 4.8 ms、p95 19.6 ms（整棵工作台重渲染），这部分与 GPU 帧相互独立。
+
+## 5. 模板
+
+- **存储**：`lib/watermark/templates.ts`，独立的 IndexedDB 库（idb-keyval 一个库只建一个 store）。工作参数本身也从 localStorage 迁到 IndexedDB（首次启动自动迁移并删除旧键），写入合并为 400 ms 一次、页面隐藏时立即落盘——图片水印的 dataURL 会撑爆 localStorage 的 5 MB。
+- **迁移**：`migrateJob(unknown)` 以 `defaultJob()` 为骨架深合并：缺字段补默认、类型不对或枚举越界回退默认、未知字段保留（向前兼容）；`fill` 这类判别联合单独处理，伪隐性以对应预设为骨架补齐。迁移是幂等的。
+- **内置起步模板（只读）**：社媒分享（右下角署名 + CDP，JPEG）、作品集防盗（平铺 + 日常隐藏 + 双引擎）、打印防伪（打印显形 + CDP）、证件/合同（斜带大字 + 抗截图 + CDP）。复制或另存为后即可修改。
+- **未保存修改**：store 记录 `activeTemplateId` 与应用那一刻的参数快照，结构比较（与键顺序无关）得出是否有修改；顶栏切换器显示圆点，切换或新建前确认（用户模板可“保存并继续”）。署名与创作者属于“人”，套用模板时若模板里留空则沿用当前值。
+- **导入导出**：`veilmark.templates/v1`，单个或全部。输出是确定性的（经 `migrateJob` 规范、不写导出时间），导入再导出与原文件逐字节一致。默认去除私有密钥并加 `privateKeyStripped` 标记，导入方在盲水印面板看到“需重新填写私钥”的提示；勾选“包含私有密钥”才保留。
+- **按图指定模板**：素材栏每张图可指定模板，默认跟随当前参数。指定的恰好是正在编辑的模板时用编辑中的参数（所见即所得），否则用该模板已保存的版本；预览、单张导出、批量导出一致。
+
+## 6. 签名身份与版权证书
+
+### 6.1 签名的含义
+
+签名只证明“**这把密钥的持有者在 issuedAt 时自行声明了这些内容**”，不是权威时间戳，也不是法律意义上的权属认定。它能防的是“证书被改”和“拿别人的证书冒充”，不能证明你是第一个创作者。可信时间戳（RFC 3161 / OpenTimestamps）与 C2PA 见路线图。界面、命令行输出与本文都写明这一点。
+
+### 6.2 签名身份（`lib/watermark/identity.ts`）
+
+- WebCrypto Ed25519 优先（Chrome 137+、Safari 17+、Firefox 129+、Node 20+），私钥以**不可导出**的 CryptoKey 存进 IndexedDB，页面脚本也读不出私钥字节；不支持时回退 `@noble/ed25519`，私钥只能以字节保存（界面上会标明）。
+- **加密备份**：备份只能在创建时做——生成可导出的密钥，把 32 字节种子用 PBKDF2-SHA256（600 000 次）派生的密钥做 AES-GCM 加密后下载（公钥与 keyId 作为附加认证数据绑进密文），再以不可导出的方式导入保存。恢复时输入口令解密，并核对派生出的公钥与文件记录一致。
+- **keyId** = SHA-256(原始公钥) 前 16 位十六进制，界面按 4 位一组显示，用于线下比对。
+- **可选：用签名身份派生创作者 ID**：取 SHA-256(公钥) 前 24 bit 写进指纹的 creator 字段，图里的指纹就与这把密钥绑定；核验时会显示“指纹中的创作者 ID 由该公钥派生”。
+- 自己的公钥创建后自动加入“已信任的公钥”；别人的公钥在验证页线下核对 keyId 后手动固定。
+
+### 6.3 证书格式（`lib/watermark/certificate.ts`）
+
+```jsonc
+{
+  "type": "veilmark.certificate/v1",
+  "payloadHex": "3c9337c0f92d9e",
+  "payload": { "version": 1, "creator": 14981566, "day": 996, "serial": 11678 },
+  "creator": { "name": "Marvin Studio", "publicKey": "<base64url 32 字节>", "keyId": "9d9afa6d059c9861" },
+  "work": { "fileName": "fjord_wm.png", "sourceSha256": "…", "outputSha256": "…", "width": 2400, "height": 1600 },
+  "watermark": { "engines": "cdp", "keyMode": "public" },   // 只记录模式，绝不写入密钥
+  "issuedAt": "2026-09-23T04:59:28.194Z",
+  "signature": "<base64url 64 字节 Ed25519>"
+}
+```
+
+- 签名对象：去掉 `signature` 后按 **RFC 8785（JCS）** 规范化的 JSON 的 UTF-8 字节。换一个工具重新排版、调换键顺序都不影响验签。
+- `outputSha256` 是导出文件字节的哈希。证书写进 PNG 后文件字节必然改变（证书不可能包含自身所在文件的哈希），所以规定按“**去掉 `veilmark:cert` 块后**”的字节计算；非 PNG 按原文件计算。
+- **PNG 内嵌**（`lib/watermark/png-meta.ts`，块读写与 CRC32 自行实现）：iTXt 块、关键字 `veilmark:cert`、未压缩 UTF-8，放在 IHDR 之后；重复写入会替换。辅助块不影响解码，测试确认写入后像素逐字节不变、盲水印照常提取。WebP 的 XMP 写入在路线图。
+- 导出：注册表保存签名后的证书；单张导出可同时下载 `.cert.json`；批量 ZIP 每张图附一份证书。
+
+### 6.4 核验清单（网页与命令行共用 `checkCertificate`）
+
+| 项 | 通过条件 | 不通过时 |
+| --- | --- | --- |
+| 签名有效 | 结构合法且 Ed25519 验签通过 | ✗；若有参考副本（图片内嵌 vs 旁路文件、本地注册表里的原件）则逐字段比对，点名被改的字段 |
+| 公钥已信任 | 本地信任列表里有该 keyId 且公钥完全相同 | 未信任为 !，显示 keyId 供线下核对；keyId 相同而公钥不同为 ✗ |
+| 图中指纹与证书一致 | 从图中提取出的盲水印指纹 = `payloadHex` | 指纹不同为 ✗（证书不属于这张图）；私钥模式未提供密钥为 ! |
+| 与导出文件为同一文件 | 文件哈希 = `outputSha256` | 转存 / 压缩 / 截图过为 !（以指纹为准） |
+| 原图哈希一致 | 用户另外提供原图时与 `sourceSha256` 一致 | ✗ |
+| 证书内部一致（附加） | 指纹由载荷字段编码而来、keyId 由公钥算出、签发日期不早于指纹日期 | ✗，直接点名矛盾字段 |
+
+验证页可以拖入图片、`.cert.json` 或两者一起，PNG 里内嵌的证书自动读取；全程在本机完成，不联网（TrustMark 模型是本站静态资源）。命令行：
+
+```bash
+npm run verify:cert -- 图片 [证书.cert.json] [--source 原图] [--key 私有密钥] [--trust keyId|公钥] [--trustmark] [--json]
+```
+
+命令行用 Node 自带的 WebCrypto 验签、sharp 解码，复用 `lib/watermark` 的提取代码；退出码 0 = 无失败项，1 = 有失败项，2 = 参数或文件错误。TrustMark 需要自行安装 `onnxruntime-node`（加 `--trustmark`），否则只用 CDP；只用 TrustMark 嵌入的证书会提示“无法提取”而不是误判失败。
+
+实测：工作台真实导出的 PNG（打印防伪 + CDP，内嵌证书）用命令行核验六项全部通过；把旁路证书的 `issuedAt` 改掉，清单指出签名失败并点名 `issuedAt`；转存为 JPEG q75 并缩到 50% 后，签名、指纹仍通过，“同一文件”一项降为需人工确认。批量 ZIP（一张 JPEG、一张 PNG，各自指定不同模板）中的每张图配各自的证书也全部通过。
+
+## 7. 系统架构
 
 ```
 ┌──────────────────────────── 浏览器（图片不出本机） ────────────────────────────┐
@@ -189,17 +322,21 @@ QIM 量化的是块能量（最大奇异值）的**绝对值**。亮度偏移、
 │  ├─ /        工作台 Studio      appica-ui + shadcn(Luma)                        │
 │  └─ /verify  验证与注册表                                                        │
 │        │                                                                        │
-│        │ zustand（配置持久化 localStorage；图片与结果只在内存）                    │
+│        │ zustand（工作参数持久化到 IndexedDB；图片与结果只在内存）                 │
+│        │ 实时预览：WebGL2 画布（glance/shader）/ Canvas 2D（显性图层）             │
+│        │ 签名：WebCrypto Ed25519（回退 @noble/ed25519）→ 证书 → PNG iTXt           │
 │        ▼                                                                        │
-│  lib/workers/client.ts ── Comlink ──►  watermark.worker.ts（预览单例 + 批量池）  │
-│                                        │                                        │
-│                                        ├─ codec      createImageBitmap / OffscreenCanvas / jSquash WebP(WASM)
-│                                        ├─ pipeline   显性 → 伪隐性 → 盲水印 → 编码
-│                                        ├─ glance     CPU 参考实现 + 盗用模拟
-│                                        ├─ blind/CDP  纯 TS
-│                                        └─ blind/TM   onnxruntime-web（WebGPU/WASM，懒加载）
+│  lib/workers/client.ts ── Comlink ──►  watermark.worker.ts                      │
+│        │  创建后注册页面 @font-face      （预览单例 + live 单例 + 批量池）         │
+│        │                                ├─ codec      createImageBitmap / OffscreenCanvas / jSquash WebP(WASM)
+│        │                                ├─ pipeline   显性 → 伪隐性 → 盲水印 → 编码
+│        │                                ├─ live       底图 + R8 掩膜/JND 图，分项缓存
+│        │                                ├─ glance     CPU 参考实现 + 盗用模拟
+│        │                                ├─ blind/CDP  纯 TS
+│        │                                └─ blind/TM   onnxruntime-web（WebGPU/WASM，懒加载）
 │                                                                                 │
-│  IndexedDB：本地注册表（idb-keyval）    Cache：ONNX 模型 / WASM                  │
+│  IndexedDB：工作参数 · 模板 · 注册表（含证书）· 签名身份 · 已信任公钥             │
+│  Cache：ONNX 模型 / WASM                                                         │
 └─────────────────────────────────────────────────────────────────────────────────┘
           ▲ 静态资源（HTML/JS/WASM/ONNX）
    Vercel 静态托管 / CDN（无服务端计算）
@@ -212,11 +349,11 @@ QIM 量化的是块能量（最大奇异值）的**绝对值**。亮度偏移、
 3. **盲水印**：最后嵌入，前面任何像素改动都会破坏它的闭环余量；双引擎时先 TM 后 CDP；
 4. **编码**：PNG 或无损 WebP；有损格式下高频层失效，UI 会提示。
 
-预览同样走 Worker 做**全分辨率**处理（防抖 280ms）：伪隐性水印是逐像素结构，用缩略图代理预览会失真。`glance/shader.ts` 里的 WebGL2 渲染器已经写好，留给后续“拖动滑杆 60fps 实时预览”使用（见路线图）。
+预览同样走 Worker 做**全分辨率**处理（防抖 280ms）：伪隐性水印是逐像素结构，用缩略图代理预览会失真。拖动滑杆期间由实时预览接管（第 4 节），松手后仍以这条全分辨率管线的结果为准。
 
 ---
 
-## 5. 目录结构
+## 8. 目录结构
 
 ```
 app/
@@ -226,40 +363,51 @@ app/
   globals.css              appica token 为唯一事实来源，shadcn token 桥接
 components/
   app-header.tsx
+  templates/               模板切换器、管理对话框、确认/命名对话框
+  identity/                签名身份对话框（创建 / 备份 / 恢复）
   studio/
-    studio.tsx             外壳：拖拽/粘贴、防抖处理、标签页
-    asset-rail.tsx         素材列表（多选、状态）
-    stage.tsx              对比视图、放大镜、盗用模拟
-    controls.tsx           Section / SliderRow / Segmented / ColorRow …
+    studio.tsx             外壳：拖拽/粘贴、防抖处理、实时预览接管判定、标签页
+    asset-rail.tsx         素材列表（多选、状态、按图指定模板）
+    stage.tsx              对比视图、放大镜、盗用模拟、实时预览画布插槽
+    live-preview.ts        实时预览主线程部分（WebGL / 2D 画布、帧调度、验收脚本）
+    controls.tsx           Section / SliderRow（拖动交互态）/ Segmented / ColorRow …
     panels/
       visible-panel.tsx    图层、排布、字体、效果、合成
       glance-panel.tsx     预设、隐藏信息、四个触发层
       blind-panel.tsx      引擎、模型加载、载荷、密钥
-      export-panel.tsx     格式、命名、单张/批量导出、注册表登记
-  verify/verify-view.tsx
+      export-panel.tsx     格式、命名、签名与证书、单张/批量导出、注册表登记
+  verify/verify-view.tsx   证书核验清单、盲水印检测、信任的公钥、注册表
   ui/                      shadcn 生成的组件（Luma 风格）
 lib/
   watermark/               ★ 算法核心：与框架无关，Worker / Node 通用
     core/image.ts          Plane/RGBA、可分离重采样（与 PIL BILINEAR 等价）、PSNR
     core/prng.ts           FNV-1a、mulberry32、密钥派生、CRC-16
+    core/bytes.ts          base64url、十六进制、SHA-256
     visible/               types · layout（纯几何）· render（Canvas 2D 印章）
     glance/                types（预设）· cpu · shader（WebGL2）· simulate（盗用模拟）
     blind/                 payload · transforms（Haar/DCT）· classic（CDP）· trustmark · baseline-svd-qim（对照）
     pipeline.ts  codec.ts  verify.ts  registry.ts
-  workers/                 watermark.worker.ts · client.ts（单例 + 池）
-  store.ts                 zustand
+    live.ts                实时预览：参数分类的缓存键、接管判定、Worker 侧分项缓存
+    templates.ts           模板类型、起步模板、migrateJob、导入导出、IndexedDB
+    identity.ts            Ed25519 签名身份、加密备份、keyId、信任列表
+    certificate.ts         证书、JCS、验签、核对清单
+    png-meta.ts            PNG 块读写、CRC32、iTXt
+  workers/                 watermark.worker.ts · client.ts（单例 + live + 池）· fonts.ts（Worker 字体注入）
+  store.ts                 zustand（工作参数、模板、交互态）
+  identity-store.ts        签名身份与信任列表
   config.ts                模型地址
 scripts/
   bench-blind.ts           盲水印鲁棒性基准（CDP vs SVD-QIM）
   bench-glance.ts          伪隐性“隐蔽性 vs 显形度”基准
   viz-glance.mts           输出显形可视化对比图
+  verify-cert.ts           离线核验版权证书（npm run verify:cert）
   fetch-trustmark-models.sh
-tests/                     vitest：payload / blind / glance / layout（24 例）
+tests/                     vitest：payload / blind / glance / layout / templates / live / certificate / png-meta（57 例）
 ```
 
 ---
 
-## 6. 核心依赖
+## 9. 核心依赖
 
 | 包 | 用途 | 加载方式 |
 | --- | --- | --- |
@@ -271,58 +419,72 @@ tests/                     vitest：payload / blind / glance / layout（24 例�
 | onnxruntime-web | TrustMark 推理（WebGPU/WASM） | **懒加载**，只有启用 TrustMark 时才下载 wasm |
 | @jsquash/webp | 无损 WebP 编码（libwebp WASM） | 懒加载 |
 | client-zip | 批量流式打包 ZIP | — |
-| idb-keyval | 本地注册表 | — |
+| idb-keyval | 工作参数、模板、注册表、签名身份、信任列表 | — |
+| @noble/ed25519 | 浏览器不支持 WebCrypto Ed25519 时的签名/验签回退 | 静态导入（纯 JS，体积很小） |
 | vitest · sharp · tsx（dev） | 单元测试、基准攻击模拟 | 仅开发 |
 
 ---
 
-## 7. UI 与交互
+## 10. UI 与交互
 
-- **三栏布局**：素材栏（多选）｜画布（对比、放大镜、盗用模拟、PSNR 与指纹徽标）｜检查器（显性 / 伪隐性 / 盲水印 / 导出四个标签，标签上的圆点表示开关状态）。窄屏时纵向堆叠。
-- **任何参数变动 → 280ms 防抖 → Worker 全分辨率重算**，画布即时更新，不需要点“应用”。
+- **顶栏模板切换器**：起步模板 / 我的模板、保存修改、另存为、管理；有未保存修改时显示圆点，切换前确认。
+- **三栏布局**：素材栏（多选、逐张指定模板）｜画布（对比、放大镜、盗用模拟、PSNR 与指纹徽标）｜检查器（显性 / 伪隐性 / 盲水印 / 导出四个标签，标签上的圆点表示开关状态）。窄屏时纵向堆叠。
+- **任何参数变动 → 280ms 防抖 → Worker 全分辨率重算**，画布即时更新，不需要点“应用”。**拖动滑杆时**切到实时预览（工具栏显示“GPU 实时预览”或“实时预览 · 显示分辨率”），松手后替换为全分辨率结果。
 - **放大镜**：最近邻 2/4/8 倍，按住 ⌥ 切换原图，用来在 1:1 下检查伪隐性层。
 - **盗用模拟**：原图和水印图同时施加同一变换，并排或滑动对比，导出前就能确认水印会显形。
 - **批量**：勾选 → 导出页“批量处理并导出已选 N 张” → 进度条 → ZIP；失败项单独列出。
-- **验证页**：拖拽/粘贴 → 结果卡片（指纹、创作者 ID、日期、序号、注册表匹配）+ 各引擎的得分明细；注册表可导入/导出。
+- **导出页 · 签名与证书**：签名身份摘要（keyId、存储方式、是否备份）、PNG 内嵌证书、单张附 `.cert.json`，并写明签名的含义。
+- **验证页**：拖入图片 / 证书 / 两者 → 证书核验清单（可一键信任已线下核对的公钥）+ 盲水印检测（指纹、创作者 ID、日期、序号、注册表匹配、各引擎得分）；可选提供原图比对；信任列表与注册表可管理，注册表记录可下载证书。
 
 ---
 
-## 8. 部署（Vercel）
+## 11. 部署（Vercel）
 
 - `next build` 产出的全部路由都是静态页（`○ Static`），没有 Serverless 函数，**零服务器成本**。
 - **TrustMark 模型托管**：约 64 MB（Q）。可以选：① 放进 `public/models/trustmark` 随站点部署；② 放到对象存储/CDN（Vercel Blob、R2），通过 `NEXT_PUBLIC_TRUSTMARK_BASE` 指定地址，注意开启 CORS 和长缓存；③ 追求更小体积时用 C 变体解码器（22 MB）。
 - **缓存**：`/models/*` 和 `*.wasm` 设置 `Cache-Control: public, max-age=31536000, immutable`。
 - **多线程 WASM（可选）**：需要跨源隔离（`COOP: same-origin` + `COEP: credentialless`）。目前不开启，默认 WebGPU 优先，单线程 WASM 兜底。
-- **隐私**：不上传任何像素；注册表只存在本机。
+- **隐私**：不上传任何像素；注册表、模板、签名私钥只存在本机。
 
 ---
 
-## 9. 测试与基准
+## 12. 测试与基准
 
 ```bash
-npm test                 # vitest：24 例（载荷、CDP 7 种攻击、伪隐性不可见/显形、排版）
+npm test                 # vitest：57 例（载荷、CDP 7 种攻击、伪隐性不可见/显形、排版、模板、实时预览分类、证书、PNG iTXt、命令行核验）
 npm run bench:blind -- <图片...>    # CDP vs SVD-QIM × 17 种攻击
 npm run bench:glance -- <图片...>   # 各模式适屏可见度 vs 8 种盗用后的显形度
 npx tsx scripts/viz-glance.mts <图片> <输出前缀> print   # 输出显形可视化对比图
+npm run verify:cert -- <图片> [证书] [--source 原图] [--trust keyId]   # 离线核验版权证书
+# 开发模式浏览器控制台：
+#   await __veilmarkLive.parity()   WebGL 与 CPU 逐像素一致性
+#   await __veilmarkLive.bench()    单帧渲染耗时
 ```
 
 ---
 
-## 10. 路线图
+## 13. 路线图
 
-**Phase 1（已完成，即本仓库）**：三种水印引擎、四层伪隐性、双引擎盲水印、工作台、批量、验证、注册表、基准与单测。
+**Phase 1（已完成）**：三种水印引擎、四层伪隐性、双引擎盲水印、工作台、批量、验证、注册表、基准与单测。
 
 **Phase 2（体验）**
 
-- 伪隐性参数拖动时切到 WebGL2 实时预览（`glance/shader.ts` 已就绪），松手后再做 CPU 全分辨率计算；
-- 多模板管理（命名、导入/导出 JSON）；按图覆盖参数；
-- 自定义字体上传（FontFace 同时注入主线程和 Worker）；
+- ✅ 拖动滑杆时切到 WebGL2 实时预览，松手后 CPU 全分辨率替换；
+- ✅ 多模板管理（IndexedDB、起步模板、导入/导出 JSON）；按图指定模板；
+- 按图覆盖单个参数（目前是整套模板粒度）；
+- 实时预览的显性图层滑杆也走 GPU（目前是主线程 Canvas 2D 按显示分辨率画，拖动期间不显示伪隐性层）；
+- 工作台按 store 切片订阅，减少每次滑杆变动的整树重渲染；
+- 自定义字体上传（Worker 已具备注入 FontFace 的通道，`lib/workers/fonts.ts`）；
 - 首次加载 TrustMark 时显示下载进度，模型写入 Cache Storage；
 - 批量导出支持 File System Access API 直接写入文件夹。
 
 **Phase 3（安全与生态）**
 
 - 移植 TrustMark 官方 BCH 数据层，与 Adobe/C2PA 生态互通；
-- 用 Ed25519 给注册表记录签名，生成可离线验证的“版权证书”；可选接入 C2PA Content Credentials；
+- ✅ Ed25519 签名身份 + 可离线验证的版权证书（JCS、PNG iTXt 内嵌、网页与命令行核验）；
+- WebP 内嵌证书（XMP / RIFF 块）；
+- 可信时间戳：对证书哈希申请 RFC 3161 时间戳或 OpenTimestamps（比特币锚定），把“issuedAt 自行声明”升级为第三方可证的时间；
+- C2PA Content Credentials（TrustMark 作为 soft-binding，证书内容映射为 C2PA 断言）；
+- 签名身份轮换与吊销（旧 keyId 签发的证书在新身份下仍可追溯）；
 - 抗几何攻击：同步模板或特征点配准，覆盖旋转、透视和大比例裁剪；
 - 可选的云端注册表（Vercel KV / Postgres），用于团队共享和公开查询。
