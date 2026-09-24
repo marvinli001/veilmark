@@ -37,12 +37,13 @@ function regionContrast(a: RGBAImage, b: RGBAImage, mask: Plane) {
 const KINDS: RevealKind[] = ["contrast", "shadow-lift", "desaturate-avg", "saturation", "sharpen", "nearest-50", "nearest-37", "print"]
 
 async function run(label: string, img: RGBAImage) {
-  const mask = await svgTextMask(img.width, img.height)
   console.log(`\n## ${label} ${img.width}×${img.height}`)
   console.log(`| 模式 | PSNR | 适屏可见度 ΔY/ΔC | ${KINDS.map((k) => REVEAL_LABELS[k]).join(" | ")} |`)
   console.log(`| --- | --- | --- | ${KINDS.map(() => "---").join(" | ")} |`)
   for (const mode of ["daily", "print", "screenshot", "hybrid"] as const) {
-    const wm = applyGlance(img, mask, glancePreset(mode))
+    const cfg = glancePreset(mode)
+    const mask = await svgTextMask(img.width, img.height, undefined, undefined, cfg.bold)
+    const wm = applyGlance(img, mask, cfg)
     const base = regionContrast(img, wm, mask)
     const cells = KINDS.map((k) => {
       const so = simulateReveal(img, k)

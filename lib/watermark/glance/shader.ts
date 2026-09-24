@@ -1,5 +1,5 @@
 import type { Plane } from "../core/image"
-import { CHROMA_AXES, CHROMA_AXIS_GAIN, type GlanceConfig } from "./types"
+import { CHROMA_AXES, CHROMA_AXIS_GAIN, GRATING_CHROMA_AXIS, type GlanceConfig } from "./types"
 
 /**
  * 伪隐性水印 · WebGL2 实时预览。
@@ -22,6 +22,7 @@ uniform vec2 u_size;
 
 uniform vec4 u_grating;      // enabled, amplitude, kind(0 checker/1 lines), period
 uniform float u_gratingAngle;
+uniform float u_gratingChroma; // 光栅色度路振幅（0 = 关）
 uniform vec3 u_panto;        // enabled, amplitude, coarsePeriod
 uniform vec3 u_tone;         // enabled, amplitude, shadowBias
 uniform vec4 u_chroma;       // enabled, amplitude(已乘轴增益), 保留, 保留
@@ -31,6 +32,7 @@ in vec2 v_uv;
 out vec4 outColor;
 
 const float TAU = 6.2831853;
+const vec3 GRATING_AXIS = vec3(${GRATING_CHROMA_AXIS.join(", ")});
 
 float hash(vec2 p) {
   // 与 CPU 版不同的哈希：抖动只是为了保均值，两端不要求逐像素一致
@@ -49,12 +51,19 @@ void main() {
   float sgn = 2.0 * m - 1.0;
 
   float dy = 0.0;
+  vec3 d = vec3(0.0);
   if (u_grating.x > 0.5) {
     float th = radians(u_gratingAngle);
     // CPU: cos(kx·x + ky·y)，kx = cos θ·2π/period
     float lines = cos(TAU * fract((px.x * cos(th) + px.y * sin(th)) / u_grating.w));
     float carrier = u_grating.z < 0.5 ? checker : lines;
     dy += u_grating.y * A * head * carrier * -sgn;
+    if (u_gratingChroma > 0.0) {
+      // CPU: room = min(B 余量, min(R, G 余量) / axis.r)，取一半
+      vec3 room3 = min(rgb, 255.0 - rgb);
+      float room = min(room3.b, min(room3.r, room3.g) / GRATING_AXIS.r);
+      d += min(u_gratingChroma, room * 0.5) * carrier * -sgn * GRATING_AXIS;
+    }
   }
   if (u_panto.x > 0.5) {
     // CPU: 1.6·cos(kc·(x+0.5))·cos(kc·(y+0.5))，kc = 2π/coarsePeriod
@@ -66,7 +75,7 @@ void main() {
     float w = 1.0 + u_tone.z * (1.5 * s * s - 0.5);
     dy += u_tone.y * A * head * sgn * w;
   }
-  vec3 d = vec3(dy);
+  d += dy;
   if (u_chroma.x > 0.5) d += u_chroma.y * A * sgn * u_chromaAxis;
 
   vec3 outRgb = floor(rgb + d + hash(px) + 0.5);
@@ -186,6 +195,7 @@ export function createGlanceRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
     "u_size",
     "u_grating",
     "u_gratingAngle",
+    "u_gratingChroma",
     "u_panto",
     "u_tone",
     "u_chroma",
@@ -243,6 +253,7 @@ export function createGlanceRenderer(canvas: HTMLCanvasElement | OffscreenCanvas
       gl.uniform2f(u.u_size, size.w, size.h)
       gl.uniform4f(u.u_grating, g.enabled ? 1 : 0, g.amplitude, g.kind === "checker" ? 0 : 1, g.period)
       gl.uniform1f(u.u_gratingAngle, g.angle)
+      gl.uniform1f(u.u_gratingChroma, g.enabled ? g.chroma : 0)
       gl.uniform3f(u.u_panto, cfg.pantograph.enabled ? 1 : 0, cfg.pantograph.amplitude, cfg.pantograph.coarsePeriod)
       gl.uniform3f(u.u_tone, cfg.tone.enabled ? 1 : 0, cfg.tone.amplitude, cfg.tone.shadowBias)
       gl.uniform4f(u.u_chroma, cfg.chroma.enabled ? 1 : 0, cfg.chroma.amplitude * CHROMA_AXIS_GAIN[axis], 0, 0)

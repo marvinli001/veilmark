@@ -11,7 +11,7 @@ import type { TemplateContext } from "./visible/types"
  * 全分辨率 CPU 管线一次 0.3–1.5 s，拖动时跟不上手。实时预览把参数分成三类：
  * - 只影响 shader uniform（各层振幅、光栅类型/周期/角度、底纹周期、暗部偏置、色度轴）：
  *   GPU 直接重绘，每帧 < 16 ms；
- * - 影响底图或掩膜（显性图层、文字、字号、旋转、密度、羽化、纹理自适应）：
+ * - 影响底图或掩膜（显性图层、文字、字号、加粗、旋转、密度、羽化、纹理自适应）：
  *   在专用 Worker 里重算“显性已合成、伪隐性未叠加”的底图与 R8 掩膜/JND 图，按键分项缓存并节流；
  * - 显性图层滑杆：主线程 Canvas 2D 按显示分辨率直接重画。
  * 松手后仍跑一次完整 CPU 管线，用确定性的结果替换预览。
@@ -23,9 +23,9 @@ export type LiveKind = "glance" | "visible"
 export function liveBaseKey(job: WatermarkJob, tpl: TemplateContext) {
   return JSON.stringify([job.visible, tpl.author ?? job.author, tpl.filename, tpl.index])
 }
-/** 羽化前的掩膜：文字与排版（文字里可能有 {author} 等变量） */
+/** 羽化前的掩膜：文字、加粗与排版（文字里可能有 {author} 等变量） */
 export const liveMaskKey = (job: WatermarkJob, tpl: TemplateContext) =>
-  JSON.stringify([job.glance.text, job.glance.layout, tpl.author ?? job.author, tpl.filename, tpl.index])
+  JSON.stringify([job.glance.text, job.glance.bold, job.glance.layout, tpl.author ?? job.author, tpl.filename, tpl.index])
 export const liveSoftKey = (job: WatermarkJob, tpl: TemplateContext) => `${liveMaskKey(job, tpl)}|${job.glance.feather}`
 export const liveActKey = (job: WatermarkJob) => String(job.glance.adaptive)
 /** 以上全部：主线程据此判断手上的纹理是否仍然有效 */

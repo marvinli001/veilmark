@@ -137,8 +137,8 @@ export function syntheticPhoto(width = 1600, height = 1067, seed = 1): RGBAImage
   return { width, height, data }
 }
 
-/** Node 下的文字掩膜替身（浏览器里用 renderTextMask），用 SVG 平铺斜向文字 */
-export async function svgTextMask(W: number, H: number, text = "© VEILMARK", sizePct = 9) {
+/** Node 下的文字掩膜替身（浏览器里用 renderTextMask），用 SVG 平铺斜向文字；bold 与 GlanceConfig.bold 同义 */
+export async function svgTextMask(W: number, H: number, text = "© VEILMARK", sizePct = 9, bold = 0) {
   const fs = Math.round(Math.min(W, H) * (sizePct / 100))
   let texts = ""
   for (let r = -8; r < 16; r++)
@@ -147,7 +147,8 @@ export async function svgTextMask(W: number, H: number, text = "© VEILMARK", si
       const y = r * fs * 1.9
       texts += `<text x="${x}" y="${y}" font-size="${fs}" font-family="Helvetica" font-weight="800" fill="#fff">${text}</text>`
     }
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="100%" height="100%" fill="#000"/><g transform="rotate(-30 ${W / 2} ${H / 2})">${texts}</g></svg>`
+  const stroke = bold > 0 ? ` stroke="#fff" stroke-width="${bold * fs * 2}" stroke-linejoin="round"` : ""
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="100%" height="100%" fill="#000"/><g transform="rotate(-30 ${W / 2} ${H / 2})"${stroke}>${texts}</g></svg>`
   const { data } = await sharp(Buffer.from(svg)).greyscale().raw().toBuffer({ resolveWithObject: true })
   return { width: W, height: H, data: Float32Array.from(data, (v) => v / 255) }
 }

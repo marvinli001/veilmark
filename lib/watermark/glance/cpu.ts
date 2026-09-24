@@ -1,5 +1,5 @@
 import { clamp, createPlane, lumaPlane, resizePlane, type Plane, type RGBAImage } from "../core/image"
-import { CHROMA_AXES, CHROMA_AXIS_GAIN, type ChromaAxis, type GlanceConfig } from "./types"
+import { CHROMA_AXES, CHROMA_AXIS_GAIN, GRATING_CHROMA_AXIS, type ChromaAxis, type GlanceConfig } from "./types"
 
 /**
  * 伪隐性水印 · CPU 参考实现（导出与批处理走这里，逐像素确定、与分辨率无关）。
@@ -137,6 +137,8 @@ export function applyGlance(
   const kx = (Math.cos(theta) * 2 * Math.PI) / g.period
   const ky = (Math.sin(theta) * 2 * Math.PI) / g.period
   const kc = (2 * Math.PI) / pa.coarsePeriod
+  const gc = g.enabled ? g.chroma : 0
+  const gAxis = GRATING_CHROMA_AXIS
 
   const out = new Uint8ClampedArray(img.data)
   const src = img.data
@@ -157,9 +159,21 @@ export function applyGlance(
       const sign = 2 * m - 1 // 信息区 +1，背景 −1
 
       let dy = 0
+      let dr = 0
+      let dg = 0
+      let db = 0
       if (g.enabled) {
         const carrier = g.kind === "checker" ? checker : Math.cos(kx * x + ky * y)
         dy += g.amplitude * A * head * carrier * -sign // 相位反转：背景 +carrier，信息区 −carrier
+        if (gc > 0) {
+          // 色度路：余量按通道对称取（两相位都不能截断，否则均值偏移会在适屏下露出字形），
+          // 只用一半，另一半留给亮度层
+          const room = Math.min(Math.min(B, 255 - B), Math.min(R, 255 - R, G, 255 - G) / gAxis[0])
+          const k = Math.min(gc, room / 2) * carrier * -sign
+          dr += k * gAxis[0]
+          dg += k * gAxis[1]
+          db += k * gAxis[2]
+        }
       }
       if (pa.enabled) {
         const coarse = 1.6 * Math.cos(kc * (x + 0.5)) * cy
@@ -169,9 +183,9 @@ export function applyGlance(
         const w = 1 + t.shadowBias * (1.5 * (1 - Y / 255) ** 2 - 0.5)
         dy += t.amplitude * A * head * sign * w
       }
-      let dr = dy
-      let dg = dy
-      let db = dy
+      dr += dy
+      dg += dy
+      db += dy
       if (c.enabled) {
         const k = chromaAmp * A * sign
         dr += k * axis[0]

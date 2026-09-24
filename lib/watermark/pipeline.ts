@@ -3,7 +3,7 @@ import { creatorIdFromText, dayFromDate, payloadToHex, type BlindPayload } from 
 import type { OrtModule, TrustMarkSessions } from "./blind/trustmark"
 import { psnr, type RGBAImage } from "./core/image"
 import { applyGlance } from "./glance/cpu"
-import { glancePreset, type GlanceConfig } from "./glance/types"
+import { glanceMaskStyle, glancePreset, type GlanceConfig } from "./glance/types"
 import { renderTextMask, renderVisibleLayer, type Ctx2D, type RenderAssets } from "./visible/render"
 import { defaultLayer, type TemplateContext, type VisibleLayer } from "./visible/types"
 
@@ -129,7 +129,7 @@ export function composeVisible(ctx: Ctx2D, job: WatermarkJob, context: TemplateC
 
 /** 伪隐性水印的信息掩膜（管线第 2 步的输入），预览与导出共用 */
 export function glanceMask(job: WatermarkJob, context: TemplateContext, W: number, H: number) {
-  return renderTextMask(W, H, job.glance.text, job.glance.layout, context)
+  return renderTextMask(W, H, glanceMaskStyle(job.glance), job.glance.layout, context)
 }
 
 export async function runPipeline(

@@ -64,6 +64,7 @@ export function GlancePanel() {
           <Section title="隐藏文字">
             <Input value={g.text.content} onChange={(e) => patchGlance((x) => ({ ...x, text: { ...x.text, content: e.target.value } }))} aria-label="隐藏文字" />
             <SliderRow live="glance" label="字号" value={g.text.fontSize} min={3} max={25} step={0.5} onChange={(fontSize) => patchGlance((x) => ({ ...x, text: { ...x.text, fontSize } }))} format={(v) => `${v}%`} />
+            <SliderRow live="glance" label="加粗" value={g.bold} min={0} max={0.08} step={0.005} onChange={(bold) => patchGlance((x) => ({ ...x, bold }))} format={(v) => `${(v * 100).toFixed(1)}%`} />
             <SliderRow live="glance" label="密度" value={g.layout.gapY} min={0.2} max={4} step={0.05} onChange={(gapY) => patchGlance((x) => ({ ...x, layout: { ...x.layout, gapY, gapX: gapY * 0.4 } }))} format={(v) => `${v.toFixed(2)}×`} />
           </Section>
 
@@ -98,6 +99,7 @@ export function GlancePanel() {
               {g.grating.enabled && (
                 <>
                   <SliderRow live="glance" label="振幅" value={g.grating.amplitude} min={0.5} max={12} step={0.5} onChange={(amplitude) => set({ grating: { ...g.grating, amplitude } })} />
+                  <SliderRow live="glance" label="色度振幅" value={g.grating.chroma} min={0} max={24} step={1} onChange={(chroma) => set({ grating: { ...g.grating, chroma } })} />
                   <FieldRow label="载波">
                     <Segmented
                       size="sm"

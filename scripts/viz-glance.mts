@@ -15,10 +15,11 @@ for (let r = -8; r < 16; r++) for (let c = -6; c < 12; c++) {
   const x = c * fs * 5.2 + (r % 2 ? fs * 2.6 : 0), y = r * fs * 1.9
   texts += `<text x="${x}" y="${y}" font-size="${fs}" font-family="Helvetica" font-weight="800" fill="#fff">© VEILMARK</text>`
 }
-const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="100%" height="100%" fill="#000"/><g transform="rotate(-30 ${W / 2} ${H / 2})">${texts}</g></svg>`
+const cfg = glancePreset(mode)
+const stroke = cfg.bold > 0 ? ` stroke="#fff" stroke-width="${cfg.bold * fs * 2}" stroke-linejoin="round"` : ""
+const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><rect width="100%" height="100%" fill="#000"/><g transform="rotate(-30 ${W / 2} ${H / 2})"${stroke}>${texts}</g></svg>`
 const { data } = await sharp(Buffer.from(svg)).greyscale().raw().toBuffer({ resolveWithObject: true })
 const mask = { width: W, height: H, data: Float32Array.from(data, (v) => v / 255) }
-const cfg = glancePreset(mode)
 const wm = applyGlance(img, mask, cfg)
 console.log(mode, "PSNR", psnr(img, wm).toFixed(2))
 const save = (i: RGBAImage, name: string, width?: number) => { let s = toSharp(i); if (width) s = s.resize(width); return s.png().toFile(`${out}_${name}.png`) }

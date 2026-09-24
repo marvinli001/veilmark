@@ -22,6 +22,7 @@ describe("实时预览：参数分类", () => {
       (j) => (j.glance.grating.kind = "lines"),
       (j) => (j.glance.grating.period = 4),
       (j) => (j.glance.grating.angle = 30),
+      (j) => (j.glance.grating.chroma = 4),
       (j) => (j.glance.pantograph.amplitude = 1),
       (j) => (j.glance.pantograph.coarsePeriod = 8),
       (j) => (j.glance.tone.amplitude = 3),
@@ -37,6 +38,7 @@ describe("实时预览：参数分类", () => {
     const layout: Array<(j: WatermarkJob) => void> = [
       (j) => (j.glance.text.content = "别的字"),
       (j) => (j.glance.text.fontSize = 12),
+      (j) => (j.glance.bold = 0.06),
       (j) => (j.glance.layout.rotation = 10),
       (j) => (j.glance.layout.gapY = 2),
       (j) => (j.glance.feather = 3),

@@ -335,7 +335,7 @@ async function parity(override?: (cfg: GlanceConfig) => GlanceConfig) {
     size: `${W}×${H}`,
     mode: cfg.mode,
     layers: {
-      grating: cfg.grating.enabled && `${cfg.grating.kind} ${cfg.grating.amplitude}`,
+      grating: cfg.grating.enabled && `${cfg.grating.kind} ${cfg.grating.amplitude}${cfg.grating.chroma > 0 ? ` +色度 ${cfg.grating.chroma}` : ""}`,
       pantograph: cfg.pantograph.enabled && cfg.pantograph.amplitude,
       tone: cfg.tone.enabled && cfg.tone.amplitude,
       chroma: cfg.chroma.enabled && `${cfg.chroma.amplitude} ${axis}`,
